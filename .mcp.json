@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "ai-bridge": {
+    "aibridge": {
       "command": "node",
       "args": ["--no-warnings", "${CLAUDE_PLUGIN_ROOT}/src/server.mjs"]
     }

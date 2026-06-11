@@ -60,7 +60,8 @@ npm run smoke:live     # + one tiny real call per vendor (burns quota)
 # --- Install as a plugin (recommended: bundles MCP server + 7 skills) ---
 # in Claude Code:
 #   /plugin marketplace add phoenixray2000/ai-bridge
-#   /plugin install ai-bridge@ai-bridge
+#   /plugin install aibridge@phoenixray2000
+# (plugin name is "aibridge" — no hyphen; a hyphen breaks slash-menu matching)
 # This wires the MCP server (via .mcp.json + ${CLAUDE_PLUGIN_ROOT}) AND the
 # /ai-bridge:* skills together. If you previously ran the standalone
 # `claude mcp add -s user ai-bridge`, remove it to avoid a duplicate server:
