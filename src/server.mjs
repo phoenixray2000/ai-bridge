@@ -6,7 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { callVendor, writeEvidence, embedFiles } from "./vendors.mjs";
+import { callVendor, writeEvidence, embedFiles, assertSafeExecCwd } from "./vendors.mjs";
 
 const server = new McpServer({ name: "ai-bridge", version: "0.1.0" });
 
@@ -50,19 +50,37 @@ server.tool(
 server.tool(
   "ai_exec",
   "Execute a self-contained implementation task via GPT (codex, workspace-write " +
-    "sandbox) or Gemini (agy). cwd MUST be an isolated worktree — the agent gets " +
-    "write access there. Use for mechanical tasks whose plan already contains the " +
-    "complete code and verify steps.",
+    "sandbox) or Gemini (agy). The agent gets write access to cwd; cwd must be a " +
+    "git repo with a clean working tree (override with allow_dirty). Reference " +
+    "plan files by path in the prompt — the agent reads them from disk. Returns " +
+    "a session id; pass it as `resume` to continue the same vendor session with " +
+    "follow-up instructions (managed-loop fix rounds). For parallel runs against " +
+    "the same repo, point cwd at separate worktrees.",
   {
     vendor: vendorSchema,
-    prompt: z.string().describe("Complete task instructions from the plan"),
-    cwd: z.string().describe("Isolated worktree directory the agent may modify"),
+    prompt: z.string().describe("Complete task instructions from the plan (may reference plan.md by path)"),
+    cwd: z.string().describe("Directory the agent may modify (clean git tree unless allow_dirty)"),
     effort: effortSchema.default("medium"),
+    resume: z.string().optional().describe("Vendor session id from a previous ai_exec to continue (gpt only)"),
+    allow_dirty: z.boolean().default(false).describe("Proceed even if cwd has uncommitted changes / is not a git repo"),
+    report_path: z.string().optional().describe("Absolute path; the agent is instructed to write its detailed report here and keep stdout to a short summary"),
   },
-  async ({ vendor, prompt, cwd, effort }) => {
-    const result = await callVendor({ vendor, role: "exec", prompt, effort, cwd });
+  async ({ vendor, prompt, cwd, effort, resume, allow_dirty, report_path }) => {
+    try {
+      assertSafeExecCwd(cwd, allow_dirty);
+    } catch (error) {
+      return textResult(String(error?.message ?? error), true);
+    }
+    let fullPrompt = prompt;
+    if (report_path) {
+      fullPrompt +=
+        `\n\n输出要求：完成后将详细报告（过程、决策、改动说明）写入 ${report_path}；` +
+        "你的最终回复只输出 ≤10 行结构化摘要：status / 改动文件列表 / verify 结果 / 遗留问题。";
+    }
+    const result = await callVendor({ vendor, role: "exec", prompt: fullPrompt, effort, cwd, resume });
     if (!result.ok) return describeFailure(result);
-    return textResult(result.output);
+    const sessionLine = result.sessionId ? `\n\n[session: ${result.sessionId}]` : "";
+    return textResult(result.output + sessionLine);
   },
 );
 

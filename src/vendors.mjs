@@ -1,11 +1,13 @@
 // Vendor command construction + execution. Pure arg-builders are exported
 // separately from the runner so the smoke test can assert on them offline.
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import os from "node:os";
 
 const IS_WIN = process.platform === "win32";
+const AGY_HOME = path.join(os.homedir(), ".gemini", "antigravity-cli");
 
 // ---------------------------------------------------------------------------
 // Binary resolution: PATH first, then known install locations, env override wins.
@@ -51,16 +53,51 @@ export function geminiModel(family, effort) {
 // ---------------------------------------------------------------------------
 // Arg builders (pure, testable)
 // ---------------------------------------------------------------------------
-export function codexArgs({ role, prompt, effort }) {
-  // review must not write; exec is confined to its spawn cwd (a worktree).
+export function codexArgs({ role, prompt, effort, resume }) {
+  if (resume) {
+    // codex exec resume [OPTIONS] [SESSION_ID] [PROMPT] — sandbox is inherited
+    // from the original session.
+    return ["exec", "resume", "--json", "-c", `model_reasoning_effort="${effort}"`, resume, prompt];
+  }
+  // review must not write; exec writes only inside its spawn cwd.
   const sandbox = role === "exec" ? "workspace-write" : "read-only";
   return [
     "exec",
     "--skip-git-repo-check",
     "--sandbox", sandbox,
+    "--json",
     "-c", `model_reasoning_effort="${effort}"`,
     prompt,
   ];
+}
+
+// codex --json emits JSONL events; the answer is item.completed/agent_message,
+// the session id arrives in thread.started (feeds `resume`).
+export function parseCodexJson(stdout) {
+  let threadId = null;
+  let usage = null;
+  let sawEvent = false;
+  const texts = [];
+  const errors = [];
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    sawEvent = true;
+    if (event.type === "thread.started" && event.thread_id) threadId = event.thread_id;
+    if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.text) {
+      texts.push(event.item.text);
+    }
+    if (event.type === "turn.completed") usage = event.usage ?? null;
+    if (event.type === "error") errors.push(event.message ?? JSON.stringify(event));
+  }
+  if (!sawEvent) return null;
+  return { threadId, text: texts.join("\n\n"), usage, errors };
 }
 
 export function agyArgs({ role, prompt, effort, cwd, family }) {
@@ -133,33 +170,192 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// agy answer recovery
+//
+// agy 1.0.x renders print-mode output through a TTY "drip" renderer: with
+// stdout piped, the answer is silently discarded (exit 0, empty stdout), and
+// the fast shutdown often races the brain transcript flush (0-byte files).
+// The conversation SQLite store is written reliably, so recovery order is:
+// stdout → transcript.jsonl → conversations/<id>.db. All three failing is a
+// loud error, never a silent empty answer.
+// ---------------------------------------------------------------------------
+
+// Minimal protobuf wire-format walk collecting printable strings (we have no
+// schema for step_payload; the answer is a string field in the type-15 step).
+export function protoStrings(buf, depth = 0, out = []) {
+  let i = 0;
+  const readVarint = () => {
+    let shift = 0n;
+    let value = 0n;
+    while (i < buf.length) {
+      const b = buf[i++];
+      value |= BigInt(b & 0x7f) << shift;
+      if (!(b & 0x80)) return value;
+      shift += 7n;
+      if (shift > 63n) return null;
+    }
+    return null;
+  };
+  while (i < buf.length) {
+    const key = readVarint();
+    if (key === null) break;
+    const wire = Number(key & 7n);
+    if (wire === 0) {
+      if (readVarint() === null) break;
+    } else if (wire === 1) i += 8;
+    else if (wire === 5) i += 4;
+    else if (wire === 2) {
+      const len = readVarint();
+      if (len === null) break;
+      const n = Number(len);
+      if (n < 0 || i + n > buf.length) break;
+      const slice = buf.subarray(i, i + n);
+      i += n;
+      const text = slice.toString("utf8");
+      if (text.length > 0 && !text.includes("�") && !/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text)) {
+        out.push(text);
+      }
+      if (depth < 6 && n > 1) protoStrings(slice, depth + 1, out);
+    } else break;
+  }
+  return out;
+}
+
+const NOISE_PATTERNS = [
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, // uuid
+  /^bot-[0-9a-f-]{36}$/i,
+  /^sessionID$/,
+  /^-?\d+$/,
+];
+
+function isNoise(s) {
+  const t = s.trim();
+  if (!t) return true;
+  if (NOISE_PATTERNS.some((re) => re.test(t))) return true;
+  // opaque single tokens (trace ids, base64-ish handles)
+  if (!/\s/.test(t) && t.length >= 16 && t.length <= 30 && /^[A-Za-z0-9_-]+$/.test(t)) return true;
+  return false;
+}
+
+export function extractAnswerFromDb(dbPath) {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  let row;
+  try {
+    row = db.prepare("SELECT step_payload FROM steps WHERE step_type = 15 ORDER BY idx DESC").get();
+  } finally {
+    db.close();
+  }
+  if (!row?.step_payload) {
+    throw new Error("no planner-response step (type 15) in conversation db");
+  }
+  const candidates = protoStrings(Buffer.from(row.step_payload)).filter((s) => !isNoise(s));
+  if (!candidates.length) {
+    throw new Error("no answer-like strings in planner-response payload");
+  }
+  // The final answer text appears in two fields (streaming accumulator +
+  // final); prefer the longest duplicated string, fall back to longest.
+  const counts = new Map();
+  for (const s of candidates) counts.set(s, (counts.get(s) ?? 0) + 1);
+  const dups = [...counts.keys()].filter((s) => counts.get(s) >= 2);
+  const pool = dups.length ? dups : candidates;
+  return pool.sort((a, b) => b.length - a.length)[0];
+}
+
+function readTranscriptAnswer(convId) {
+  const p = path.join(AGY_HOME, "brain", convId, ".system_generated", "logs", "transcript.jsonl");
+  let raw;
+  try {
+    raw = readFileSync(p, "utf8");
+  } catch {
+    return null;
+  }
+  let answer = null;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.source === "MODEL" && entry.type === "PLANNER_RESPONSE" && entry.status === "DONE" && entry.content) {
+        answer = entry.content;
+      }
+    } catch {
+      // partial line from a racy flush — ignore
+    }
+  }
+  return answer;
+}
+
+export function recoverAgyAnswer({ cwd, since }) {
+  const cachePath = path.join(AGY_HOME, "cache", "last_conversations.json");
+  const cache = JSON.parse(readFileSync(cachePath, "utf8"));
+  const want = path.resolve(cwd ?? process.cwd()).toLowerCase();
+  const entry = Object.entries(cache).find(([key]) => path.resolve(key).toLowerCase() === want);
+  if (!entry) {
+    throw new Error(`no conversation mapping for ${want} in ${cachePath}`);
+  }
+  const convId = entry[1];
+  const dbPath = path.join(AGY_HOME, "conversations", `${convId}.db`);
+  // Failed runs also update the cwd mapping — a stale db means agy died
+  // before answering; returning its previous answer would be silent corruption.
+  if (statSync(dbPath).mtimeMs < since - 2000) {
+    throw new Error(`conversation ${convId} predates this run — agy likely failed before answering`);
+  }
+  const fromTranscript = readTranscriptAnswer(convId);
+  if (fromTranscript) return { answer: fromTranscript, source: "transcript" };
+  return { answer: extractAnswerFromDb(dbPath), source: "db" };
+}
+
+// ---------------------------------------------------------------------------
 // High-level vendor calls
 // ---------------------------------------------------------------------------
-export async function callVendor({ vendor, role, prompt, effort, cwd, family, timeoutMs }) {
+export async function callVendor({ vendor, role, prompt, effort, cwd, family, timeoutMs, resume }) {
+  const started = Date.now();
   let result;
   let commandLine;
   if (vendor === "gpt") {
-    const args = codexArgs({ role, prompt, effort });
+    const args = codexArgs({ role, prompt, effort, resume });
     commandLine = `codex ${args.slice(0, -1).join(" ")} <prompt>`;
     result = await run(codexBin(), args, { cwd, timeoutMs });
+    if (result.ok) {
+      const parsed = parseCodexJson(result.stdout);
+      if (parsed) {
+        if (parsed.errors.length) {
+          return { ok: false, commandLine, error: parsed.errors.join("; "), sessionId: parsed.threadId };
+        }
+        if (!parsed.text) {
+          return { ok: false, commandLine, error: "codex completed without an agent message", sessionId: parsed.threadId };
+        }
+        return { ok: true, commandLine, output: parsed.text, sessionId: parsed.threadId, usage: parsed.usage };
+      }
+      // non-JSON output (future codex change): fall through to raw stdout
+    }
   } else {
     const args = agyArgs({ role, prompt, effort, cwd, family });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
     result = await run(agyBin(), args, { cwd, timeoutMs });
   }
 
-  // Fail loud on the known agy 1.0.x headless symptom: clean exit, empty stdout.
-  // We verified stdout works on this machine; if it ever regresses we want an
-  // error pointing at the transcript dir, not a silent empty review.
+  // agy 1.0.x with piped stdout: answer is rendered to a TTY drip and
+  // discarded — recover it from the conversation store (see recovery section).
   if (vendor === "gemini" && result.ok && result.stdout === "") {
-    return {
-      ok: false,
-      commandLine,
-      error:
-        "agy exited 0 but printed nothing — likely the agy -p stdout bug. " +
-        `Inspect ${path.join(os.homedir(), ".gemini", "antigravity-cli", "brain")} for the transcript before retrying.`,
-      stderr: result.stderr,
-    };
+    try {
+      const recovered = recoverAgyAnswer({ cwd, since: started });
+      return {
+        ok: true,
+        commandLine,
+        output: recovered.answer,
+        note: `answer recovered from ${recovered.source} (agy piped-stdout bug)`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        commandLine,
+        error:
+          "agy exited 0 with empty stdout and recovery failed: " +
+          (error?.message ?? error) +
+          ` — inspect ${path.join(AGY_HOME, "brain")} and ${path.join(AGY_HOME, "conversations")}`,
+        stderr: result.stderr,
+      };
+    }
   }
   if (!result.ok) {
     return {
@@ -173,6 +369,26 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     };
   }
   return { ok: true, commandLine, output: result.stdout };
+}
+
+// ---------------------------------------------------------------------------
+// Dirty-tree guard: git is the safety net for agentic writes — uncommitted
+// changes are the only unrecoverable loss. exec into a dirty (or non-git)
+// cwd requires explicit allow_dirty.
+// ---------------------------------------------------------------------------
+export function assertSafeExecCwd(cwd, allowDirty) {
+  if (allowDirty) return;
+  const r = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", windowsHide: true });
+  if (r.error || r.status !== 0) {
+    throw new Error(`${cwd} is not a git repository — no safety net for agent writes; pass allow_dirty: true to proceed`);
+  }
+  const dirty = r.stdout.trim();
+  if (dirty) {
+    throw new Error(
+      `${cwd} has uncommitted changes — an agent run could clobber them irrecoverably. ` +
+      `Commit/stash first, or pass allow_dirty: true.\n${dirty.split("\n").slice(0, 10).join("\n")}`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

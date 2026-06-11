@@ -5,17 +5,29 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codexArgs, agyArgs, geminiModel, callVendor } from "../src/vendors.mjs";
+import { codexArgs, agyArgs, geminiModel, callVendor, parseCodexJson } from "../src/vendors.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const live = process.argv.includes("--live");
 
 // --- arg builders -----------------------------------------------------------
 assert.deepEqual(codexArgs({ role: "review", prompt: "P", effort: "high" }), [
-  "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+  "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--json",
   "-c", 'model_reasoning_effort="high"', "P",
 ]);
 assert.deepEqual(codexArgs({ role: "exec", prompt: "P", effort: "medium" })[3], "workspace-write");
+assert.deepEqual(codexArgs({ role: "exec", prompt: "P", effort: "medium", resume: "abc-123" }), [
+  "exec", "resume", "--json", "-c", 'model_reasoning_effort="medium"', "abc-123", "P",
+]);
+
+const parsed = parseCodexJson([
+  '{"type":"thread.started","thread_id":"t-1"}',
+  '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"HELLO"}}',
+  '{"type":"turn.completed","usage":{"output_tokens":5}}',
+].join("\n"));
+assert.equal(parsed.threadId, "t-1");
+assert.equal(parsed.text, "HELLO");
+assert.equal(parseCodexJson("plain text output"), null);
 
 const review = agyArgs({ role: "review", prompt: "P", effort: "high" });
 assert.ok(!review.includes("--add-dir"), "review must be filesystem-blind");

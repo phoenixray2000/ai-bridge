@@ -22,15 +22,22 @@ Vendor mapping:
   model display name. Review passes **no** `--add-dir`: the reviewer is
   filesystem-blind by construction.
 
-Fail-loud guards:
+Reliability:
 
-- agy exiting 0 with empty stdout (the known 1.0.x headless symptom) is an
-  **error** pointing at the transcript dir — never a silent empty review.
+- **agy answer recovery**: agy 1.0.x discards print-mode output when stdout is
+  piped (TTY drip renderer). The bridge recovers the answer via
+  transcript.jsonl → conversations/<id>.db (protobuf extraction), with
+  freshness validation; all sources failing is a loud error, never a silent
+  empty answer. See NOTES.md.
+- **codex --json**: clean answer text, session id (feeds `resume` for
+  managed-loop fix rounds), token usage.
+- **dirty-tree guard**: `ai_exec` refuses a cwd that is not a clean git tree
+  unless `allow_dirty: true` — git is the safety net for agent writes.
 - `ai_digest` file embedding rejects >400KB instead of truncating.
 
 ## Prerequisites
 
-- Node ≥ 20
+- Node ≥ 22 (uses node:sqlite)
 - `codex` CLI logged in (`codex login`)
 - `agy` CLI logged in (run `agy` once interactively)
 
@@ -46,7 +53,7 @@ npm run smoke          # offline: arg builders + MCP handshake
 npm run smoke:live     # + one tiny real call per vendor (burns quota)
 
 # register for all projects (user scope):
-claude mcp add -s user ai-bridge -- node D:\git\ai-bridge\src\server.mjs
+claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\server.mjs
 ```
 
 ## Usage notes
