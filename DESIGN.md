@@ -102,7 +102,8 @@ plan 外的 /gpt /gemini 是一次性，问完即终。
 
 ## 10. 落地顺序
 
-1. ai-bridge MCP 收尾（agy 回读打通 + NOTES 设计待办 5 条）→ `smoke:live` 全绿
-2. plugin 化：skills 七条 + manifest + MCP 捆绑注册
+1. ✅ ai-bridge MCP 收尾（agy 回读打通 + 设计待办）→ `smoke:live` 全绿
+2. ✅ plugin 化：skills 七条 + plugin.json + .mcp.json 捆绑 + marketplace.json
+   （`/plugin marketplace add phoenixray2000/ai-bridge` → `/plugin install ai-bridge@ai-bridge`）
 3. plan 的 route 字段 Phase B 试运行；verify 闸门进 collab-runtime
 4. （可选）场景切换建议自动化（水位过线提示，切换动作保留人手）

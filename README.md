@@ -13,6 +13,11 @@ Encodes the roles of the model-selection methodology (see
 | `ai_exec` | mechanical task execution | write, confined to the given worktree `cwd` | effort `medium` |
 | `ai_digest` | context offload (P4): bulky material in, summary out | embedded files (no fs) or read on `cwd` | Gemini Flash, effort `medium` |
 
+Seven routing skills surface as `/ai-bridge:*` slash commands: `route`
+(dispatcher + canonical scenario table), `ai-model` (scenario state),
+`gpt` / `gemini` (one-shot), `digest` (P4 offload), `smart-plan`
+(model-bound planning), `xreview` (cross-vendor review).
+
 Vendor mapping:
 
 - `gpt` → `codex exec` with `--sandbox read-only|workspace-write` and
@@ -52,7 +57,16 @@ npm install
 npm run smoke          # offline: arg builders + MCP handshake
 npm run smoke:live     # + one tiny real call per vendor (burns quota)
 
-# register for all projects (user scope):
+# --- Install as a plugin (recommended: bundles MCP server + 7 skills) ---
+# in Claude Code:
+#   /plugin marketplace add phoenixray2000/ai-bridge
+#   /plugin install ai-bridge@ai-bridge
+# This wires the MCP server (via .mcp.json + ${CLAUDE_PLUGIN_ROOT}) AND the
+# /ai-bridge:* skills together. If you previously ran the standalone
+# `claude mcp add -s user ai-bridge`, remove it to avoid a duplicate server:
+#   claude mcp remove -s user ai-bridge
+
+# --- Or register just the MCP server, no skills (standalone) ---
 claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\server.mjs
 ```
 

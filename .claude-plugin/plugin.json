@@ -1,0 +1,12 @@
+{
+  "name": "ai-bridge",
+  "description": "Intelligent model routing for dev workflows: dispatch tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents by the model-selection methodology. Bundles the ai-bridge MCP server (ai_review/ai_exec/ai_digest) and seven routing skills.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ray"
+  },
+  "homepage": "https://github.com/phoenixray2000/ai-bridge",
+  "repository": "https://github.com/phoenixray2000/ai-bridge",
+  "license": "MIT",
+  "keywords": ["routing", "mcp", "codex", "gemini", "subagent", "model-selection"]
+}

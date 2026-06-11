@@ -1,0 +1,18 @@
+{
+  "name": "ai-bridge",
+  "description": "Intelligent model routing for dev workflows across GPT, Gemini, and Claude subagents",
+  "owner": {
+    "name": "Ray"
+  },
+  "plugins": [
+    {
+      "name": "ai-bridge",
+      "description": "Routing skills + ai-bridge MCP server (ai_review/ai_exec/ai_digest). Dispatches tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents per the model-selection methodology.",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "Ray"
+      }
+    }
+  ]
+}
