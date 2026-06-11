@@ -1,7 +1,7 @@
 // Vendor command construction + execution. Pure arg-builders are exported
 // separately from the runner so the smoke test can assert on them offline.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import os from "node:os";
@@ -143,6 +143,11 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
       resolve({ ok: false, exitCode: null, stdout: "", stderr: String(error) });
       return;
     }
+    // Decode as UTF-8 via the stream's StringDecoder so a multibyte char split
+    // across chunk boundaries isn't corrupted (our prompts/answers are often
+    // Chinese — naive Buffer→string concat would mojibake).
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -237,7 +242,11 @@ function isNoise(s) {
   return false;
 }
 
-export function extractAnswerFromDb(dbPath) {
+// Returns { strings } from the latest planner-response payload. `prompt`, when
+// given, is excluded from candidates — the prompt is echoed into the payload
+// and for review/digest calls it dwarfs the answer, so the longest-dup
+// heuristic would otherwise return the prompt itself (both reviewers flagged).
+export function extractAnswerFromDb(dbPath, { prompt } = {}) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   let row;
   try {
@@ -248,9 +257,19 @@ export function extractAnswerFromDb(dbPath) {
   if (!row?.step_payload) {
     throw new Error("no planner-response step (type 15) in conversation db");
   }
-  const candidates = protoStrings(Buffer.from(row.step_payload)).filter((s) => !isNoise(s));
+  const promptNorm = prompt?.trim();
+  const candidates = protoStrings(Buffer.from(row.step_payload))
+    .filter((s) => !isNoise(s))
+    .filter((s) => {
+      if (!promptNorm) return true;
+      const t = s.trim();
+      // drop the prompt itself, or any candidate that embeds the whole prompt
+      // (a metadata wrapper around it). Do NOT drop candidates that are merely
+      // substrings of the prompt — a short answer can legitimately be one.
+      return t !== promptNorm && !t.includes(promptNorm);
+    });
   if (!candidates.length) {
-    throw new Error("no answer-like strings in planner-response payload");
+    throw new Error("no answer-like strings in planner-response payload (after prompt exclusion)");
   }
   // The final answer text appears in two fields (streaming accumulator +
   // final); prefer the longest duplicated string, fall back to longest.
@@ -259,6 +278,26 @@ export function extractAnswerFromDb(dbPath) {
   const dups = [...counts.keys()].filter((s) => counts.get(s) >= 2);
   const pool = dups.length ? dups : candidates;
   return pool.sort((a, b) => b.length - a.length)[0];
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Pick the conversation created by THIS run: the newest conversation db whose
+// mtime is at/after run start. Replaces the old cwd→id cache lookup, which
+// collided under concurrency — review/digest calls pass no cwd, so they all
+// mapped to process.cwd() and a parallel call would return the wrong answer.
+function newestConversationSince(since) {
+  const dir = path.join(AGY_HOME, "conversations");
+  let best = null;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".db")) continue;
+    const id = name.slice(0, -3);
+    if (!UUID_RE.test(id)) continue;
+    const mtime = statSync(path.join(dir, name)).mtimeMs;
+    if (mtime < since - 2000) continue; // predates this run
+    if (!best || mtime > best.mtime) best = { id, mtime };
+  }
+  return best?.id ?? null;
 }
 
 function readTranscriptAnswer(convId) {
@@ -284,24 +323,19 @@ function readTranscriptAnswer(convId) {
   return answer;
 }
 
-export function recoverAgyAnswer({ cwd, since }) {
-  const cachePath = path.join(AGY_HOME, "cache", "last_conversations.json");
-  const cache = JSON.parse(readFileSync(cachePath, "utf8"));
-  const want = path.resolve(cwd ?? process.cwd()).toLowerCase();
-  const entry = Object.entries(cache).find(([key]) => path.resolve(key).toLowerCase() === want);
-  if (!entry) {
-    throw new Error(`no conversation mapping for ${want} in ${cachePath}`);
+export function recoverAgyAnswer({ since, prompt }) {
+  const convId = newestConversationSince(since);
+  if (!convId) {
+    throw new Error(
+      `no conversation created at/after this run in ${path.join(AGY_HOME, "conversations")} — agy likely failed before answering`,
+    );
   }
-  const convId = entry[1];
   const dbPath = path.join(AGY_HOME, "conversations", `${convId}.db`);
-  // Failed runs also update the cwd mapping — a stale db means agy died
-  // before answering; returning its previous answer would be silent corruption.
-  if (statSync(dbPath).mtimeMs < since - 2000) {
-    throw new Error(`conversation ${convId} predates this run — agy likely failed before answering`);
-  }
+  // transcript is the same convId's structured log — already run-fresh via the
+  // mtime gate above; prefer it (clean PLANNER_RESPONSE) over db heuristic.
   const fromTranscript = readTranscriptAnswer(convId);
-  if (fromTranscript) return { answer: fromTranscript, source: "transcript" };
-  return { answer: extractAnswerFromDb(dbPath), source: "db" };
+  if (fromTranscript) return { answer: fromTranscript, source: "transcript", convId };
+  return { answer: extractAnswerFromDb(dbPath, { prompt }), source: "db", convId };
 }
 
 // ---------------------------------------------------------------------------
@@ -317,17 +351,21 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     result = await run(codexBin(), args, { cwd, timeoutMs });
     if (result.ok) {
       const parsed = parseCodexJson(result.stdout);
-      if (parsed) {
-        if (parsed.errors.length) {
-          return { ok: false, commandLine, error: parsed.errors.join("; "), sessionId: parsed.threadId };
-        }
-        if (!parsed.text) {
-          return { ok: false, commandLine, error: "codex completed without an agent message", sessionId: parsed.threadId };
-        }
-        return { ok: true, commandLine, output: parsed.text, sessionId: parsed.threadId, usage: parsed.usage };
+      // We always pass --json; no parseable events means something is wrong
+      // (auth banner, crash, codex CLI change). Fail loud — never hand back
+      // raw stdout as a successful answer.
+      if (!parsed) {
+        return { ok: false, commandLine, error: "codex --json produced no parseable events", stdout: result.stdout, stderr: result.stderr };
       }
-      // non-JSON output (future codex change): fall through to raw stdout
+      if (parsed.errors.length) {
+        return { ok: false, commandLine, error: parsed.errors.join("; "), sessionId: parsed.threadId };
+      }
+      if (!parsed.text) {
+        return { ok: false, commandLine, error: "codex completed without an agent message", sessionId: parsed.threadId };
+      }
+      return { ok: true, commandLine, output: parsed.text, sessionId: parsed.threadId, usage: parsed.usage };
     }
+    // result not ok → shared failure handler below
   } else {
     const args = agyArgs({ role, prompt, effort, cwd, family });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
@@ -338,7 +376,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
   // discarded — recover it from the conversation store (see recovery section).
   if (vendor === "gemini" && result.ok && result.stdout === "") {
     try {
-      const recovered = recoverAgyAnswer({ cwd, since: started });
+      const recovered = recoverAgyAnswer({ since: started, prompt });
       return {
         ok: true,
         commandLine,
@@ -379,6 +417,9 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
 export function assertSafeExecCwd(cwd, allowDirty) {
   if (allowDirty) return;
   const r = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", windowsHide: true });
+  if (r.error?.code === "ENOENT") {
+    throw new Error("git is not installed or not on PATH — cannot verify a safe exec cwd; install git or pass allow_dirty: true");
+  }
   if (r.error || r.status !== 0) {
     throw new Error(`${cwd} is not a git repository — no safety net for agent writes; pass allow_dirty: true to proceed`);
   }
@@ -412,17 +453,22 @@ export function writeEvidence(evidencePath, { vendor, role, effort, commandLine,
 const MAX_EMBED_BYTES = 400 * 1024;
 
 export function embedFiles(files) {
+  // Stat-and-sum before reading anything — a multi-GB path shouldn't be slurped
+  // into memory just to fail the size check afterward.
   let total = 0;
-  const blocks = [];
   for (const file of files) {
-    const content = readFileSync(file, "utf8");
-    total += Buffer.byteLength(content, "utf8");
+    const st = statSync(file);
+    if (!st.isFile()) {
+      throw new Error(`not a regular file: ${file}`);
+    }
+    total += st.size;
     if (total > MAX_EMBED_BYTES) {
       throw new Error(
         `embedded files exceed ${MAX_EMBED_BYTES} bytes at ${file}; pass cwd instead so agy reads from disk`,
       );
     }
-    blocks.push(`<file path="${file}">\n${content}\n</file>`);
   }
-  return blocks.join("\n\n");
+  return files
+    .map((file) => `<file path="${file}">\n${readFileSync(file, "utf8")}\n</file>`)
+    .join("\n\n");
 }
