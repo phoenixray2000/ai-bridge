@@ -53,21 +53,23 @@ export function geminiModel(family, effort) {
 // ---------------------------------------------------------------------------
 // Arg builders (pure, testable)
 // ---------------------------------------------------------------------------
-export function codexArgs({ role, prompt, effort, resume }) {
+// The prompt is fed via stdin (`-`), not argv — a large prompt as a single
+// Windows argv arg hits the ~32KB CreateProcess limit and gets truncated.
+// Sandbox is danger-full-access: it's the only codex mode whose tool launcher
+// works on this Windows setup (read-only/workspace-write helpers fail with
+// orchestrator_helper_launch_failed). git is the safety net — exec is
+// dirty-tree-guarded; review is instructed read-only and never committed.
+export function codexArgs({ effort, resume }) {
   if (resume) {
-    // codex exec resume [OPTIONS] [SESSION_ID] [PROMPT] — sandbox is inherited
-    // from the original session.
-    return ["exec", "resume", "--json", "-c", `model_reasoning_effort="${effort}"`, resume, prompt];
+    return ["exec", "resume", "--json", "-c", `model_reasoning_effort="${effort}"`, resume, "-"];
   }
-  // review must not write; exec writes only inside its spawn cwd.
-  const sandbox = role === "exec" ? "workspace-write" : "read-only";
   return [
     "exec",
     "--skip-git-repo-check",
-    "--sandbox", sandbox,
+    "--sandbox", "danger-full-access",
     "--json",
     "-c", `model_reasoning_effort="${effort}"`,
-    prompt,
+    "-",
   ];
 }
 
@@ -104,15 +106,16 @@ export function agyArgs({ role, prompt, effort, cwd, family }) {
   const model = geminiModel(family ?? (role === "digest" ? "flash" : "pro"), effort);
   const args = ["--model", model, "--print-timeout", role === "exec" ? "30m" : "15m"];
   if (role === "exec") {
-    // exec needs file access; callers must point cwd at an isolated worktree.
+    // exec needs to WRITE — full permissions. cwd is the (clean-guarded) repo.
     args.push("--add-dir", cwd, "--dangerously-skip-permissions");
-  } else if (role === "digest" && cwd) {
-    // digest over a directory: grant read access to that directory only.
-    // agy has no read-only approval mode, so the blast radius is the cwd we add.
-    args.push("--add-dir", cwd, "--dangerously-skip-permissions");
+  } else if (cwd) {
+    // review / digest with a repo: read + terminal-restricted, NOT dangerous.
+    // Verified empirically: `agy --add-dir <repo> --sandbox -p` reads files
+    // under headless mode without hanging or write/exec capability. The agent
+    // reads the referenced files itself — no inlining, no argv-limit truncation.
+    args.push("--add-dir", cwd, "--sandbox");
   }
-  // review: no --add-dir at all — material travels in the prompt, reviewer is
-  // filesystem-blind by construction.
+  // no cwd → inline fallback: material travels in the prompt (fs-blind).
   args.push("-p", prompt);
   return args;
 }
@@ -134,14 +137,20 @@ function killTree(child) {
   }
 }
 
-export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      // stdin: pipe when we have input to feed (codex reads the prompt from
+      // stdin via `-`, dodging the Windows ~32KB argv limit), else ignore.
+      child = spawn(bin, args, { cwd, stdio: [input != null ? "pipe" : "ignore", "pipe", "pipe"], windowsHide: true });
     } catch (error) {
       resolve({ ok: false, exitCode: null, stdout: "", stderr: String(error) });
       return;
+    }
+    if (input != null) {
+      child.stdin.on("error", () => {}); // ignore EPIPE if the child exits early
+      child.stdin.end(input);
     }
     // Decode as UTF-8 via the stream's StringDecoder so a multibyte char split
     // across chunk boundaries isn't corrupted (our prompts/answers are often
@@ -346,9 +355,10 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
   let result;
   let commandLine;
   if (vendor === "gpt") {
-    const args = codexArgs({ role, prompt, effort, resume });
-    commandLine = `codex ${args.slice(0, -1).join(" ")} <prompt>`;
-    result = await run(codexBin(), args, { cwd, timeoutMs });
+    const args = codexArgs({ effort, resume });
+    commandLine = `codex ${args.join(" ")} <stdin-prompt>${cwd ? ` (cwd=${cwd})` : ""}`;
+    // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
+    result = await run(codexBin(), args, { cwd, timeoutMs, input: prompt });
     if (result.ok) {
       const parsed = parseCodexJson(result.stdout);
       // We always pass --json; no parseable events means something is wrong

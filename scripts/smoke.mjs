@@ -11,13 +11,13 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const live = process.argv.includes("--live");
 
 // --- arg builders -----------------------------------------------------------
-assert.deepEqual(codexArgs({ role: "review", prompt: "P", effort: "high" }), [
-  "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--json",
-  "-c", 'model_reasoning_effort="high"', "P",
+// prompt via stdin (`-`); danger-full-access is the only working codex mode on Windows
+assert.deepEqual(codexArgs({ effort: "high" }), [
+  "exec", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--json",
+  "-c", 'model_reasoning_effort="high"', "-",
 ]);
-assert.deepEqual(codexArgs({ role: "exec", prompt: "P", effort: "medium" })[3], "workspace-write");
-assert.deepEqual(codexArgs({ role: "exec", prompt: "P", effort: "medium", resume: "abc-123" }), [
-  "exec", "resume", "--json", "-c", 'model_reasoning_effort="medium"', "abc-123", "P",
+assert.deepEqual(codexArgs({ effort: "medium", resume: "abc-123" }), [
+  "exec", "resume", "--json", "-c", 'model_reasoning_effort="medium"', "abc-123", "-",
 ]);
 
 const parsed = parseCodexJson([
@@ -29,14 +29,24 @@ assert.equal(parsed.threadId, "t-1");
 assert.equal(parsed.text, "HELLO");
 assert.equal(parseCodexJson("plain text output"), null);
 
-const review = agyArgs({ role: "review", prompt: "P", effort: "high" });
-assert.ok(!review.includes("--add-dir"), "review must be filesystem-blind");
-assert.ok(!review.includes("--dangerously-skip-permissions"));
-assert.equal(review[review.indexOf("--model") + 1], "Gemini 3.1 Pro (High)");
+// review without cwd → fs-blind inline fallback
+const reviewBlind = agyArgs({ role: "review", prompt: "P", effort: "high" });
+assert.ok(!reviewBlind.includes("--add-dir"), "review without cwd is fs-blind");
+assert.equal(reviewBlind[reviewBlind.indexOf("--model") + 1], "Gemini 3.1 Pro (High)");
 
+// review WITH cwd → read-by-reference: --add-dir + --sandbox, never dangerous
+const reviewRef = agyArgs({ role: "review", prompt: "P", effort: "high", cwd: "D:/repo" });
+assert.ok(reviewRef.includes("--add-dir") && reviewRef.includes("D:/repo"));
+assert.ok(reviewRef.includes("--sandbox"), "review-by-reference uses --sandbox read mode");
+assert.ok(!reviewRef.includes("--dangerously-skip-permissions"), "review must never get write");
+
+// exec → write access
 const exec = agyArgs({ role: "exec", prompt: "P", effort: "medium", cwd: "D:/wt" });
-assert.ok(exec.includes("--add-dir") && exec.includes("D:/wt"));
-assert.ok(exec.includes("--dangerously-skip-permissions"));
+assert.ok(exec.includes("--add-dir") && exec.includes("--dangerously-skip-permissions"));
+
+// digest with cwd → --sandbox read, NOT dangerous (fixes review finding #8)
+const digestDir = agyArgs({ role: "digest", prompt: "P", effort: "medium", family: "flash", cwd: "D:/repo" });
+assert.ok(digestDir.includes("--sandbox") && !digestDir.includes("--dangerously-skip-permissions"), "digest dir-scan is read-only");
 
 const digest = agyArgs({ role: "digest", prompt: "P", effort: "medium", family: "flash" });
 assert.ok(!digest.includes("--add-dir"), "file-embed digest grants no fs access");

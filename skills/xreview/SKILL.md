@@ -18,15 +18,21 @@ if the current scenario's executor is GPT, GPT reviewing its own output is
 same-source; prefer Gemini-led (or add Opus medium) in that case. The orchestrator
 (Claude) review is always present regardless.
 
-## How
+## How — review by reference, never inline
 
 For each panel vendor, MCP `ai_review` with:
-- the **full diff and spec context inline in the prompt** (reviewer is
-  filesystem-blind — it has no repo access by design);
-- `vendor` and `effort` (default high; xhigh for cutover diffs);
-- `evidence_path: <repo>/docs/superpowers/reviews/<label>-<vendor>.md` so each
-  vendor's raw output is captured for the verify gate (dual-sign = both files
-  must exist).
+- `cwd: <repo>` — the reviewer reads files and runs git **itself** from here.
+  **Do NOT paste code/diffs into the prompt** — inlining hits the Windows argv
+  limit (truncation) and forces lossy trimming. Reference instead.
+- `prompt`: instructions + **what to review by reference** — the diff range
+  (`git diff <base>..<head>`), the changed file paths, and the spec path. Tell
+  the reviewer to read those and review against the spec. It has read-only
+  access (codex danger-full-access + git net; agy `--sandbox`).
+- `effort` (default high; xhigh for cutover diffs);
+- `evidence_path: <repo>/docs/superpowers/reviews/<label>-<vendor>.md` (dual-sign
+  = both vendor files must exist for the gate).
+
+Only inline (omit `cwd`) for a standalone snippet that isn't in any repo.
 
 Run the panel vendors concurrently (independent MCP calls in one turn).
 

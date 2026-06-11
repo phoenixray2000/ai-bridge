@@ -27,18 +27,23 @@ function describeFailure(result) {
 
 server.tool(
   "ai_review",
-  "Cross-vendor adversarial code review. Sends the prompt (include the full diff " +
-    "and spec context inline — the reviewer has NO filesystem access) to GPT (codex) " +
-    "or Gemini (agy) and returns the review. Optionally writes the raw output to " +
-    "evidence_path for phase-gate verification.",
+  "Cross-vendor review BY REFERENCE. Pass cwd = the repo; the prompt carries only " +
+    "INSTRUCTIONS + file paths / diff ranges / spec paths — NOT inlined code. The " +
+    "reviewer reads the files and runs git itself from cwd (read-only intent: codex " +
+    "uses danger-full-access on Windows with git as the safety net; agy uses " +
+    "--sandbox read mode). This avoids the argv-length truncation and lossy manual " +
+    "trimming that inlining forces. Omit cwd ONLY to review a standalone snippet " +
+    "that isn't in a repo (then inline it in the prompt; fs-blind fallback). " +
+    "Optionally writes raw output to evidence_path for the phase gate.",
   {
     vendor: vendorSchema,
-    prompt: z.string().describe("Review instructions + full material (diff, spec excerpts) inline"),
+    prompt: z.string().describe("Review instructions + file paths / diff ranges (NOT inlined code, when cwd is set)"),
+    cwd: z.string().optional().describe("Repo the reviewer reads from (read-only). Omit only for repo-less snippets inlined in the prompt."),
     effort: effortSchema.default("high"),
     evidence_path: z.string().optional().describe("Absolute path; raw output is written here for the verify gate"),
   },
-  async ({ vendor, prompt, effort, evidence_path }) => {
-    const result = await callVendor({ vendor, role: "review", prompt, effort });
+  async ({ vendor, prompt, cwd, effort, evidence_path }) => {
+    const result = await callVendor({ vendor, role: "review", prompt, effort, cwd });
     if (!result.ok) return describeFailure(result);
     if (evidence_path) {
       writeEvidence(evidence_path, { vendor, role: "review", effort, commandLine: result.commandLine, output: result.output });
