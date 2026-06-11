@@ -70,6 +70,18 @@ npm run smoke:live     # + one tiny real call per vendor (burns quota)
 claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\server.mjs
 ```
 
+## Phase-gate (any repo)
+
+`scripts/check-review-evidence.mjs` asserts cross-vendor review evidence exists
+before a phase tags/merges — wire one line into a consuming repo's verify chain:
+
+```
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/superpowers/reviews [--verdict]
+```
+
+Dual-sign = all listed vendor files present and non-empty; `--verdict` also
+requires the arbitration record. Fails loud listing what's missing. Repo-agnostic.
+
 ## Usage notes
 
 - `ai_review`: include the **full diff and spec context in the prompt**; write

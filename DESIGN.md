@@ -105,5 +105,8 @@ plan 外的 /gpt /gemini 是一次性，问完即终。
 1. ✅ ai-bridge MCP 收尾（agy 回读打通 + 设计待办）→ `smoke:live` 全绿
 2. ✅ plugin 化：skills 七条 + plugin.json + .mcp.json 捆绑 + marketplace.json
    （`/plugin marketplace add phoenixray2000/ai-bridge` → `/plugin install ai-bridge@ai-bridge`）
-3. plan 的 route 字段 Phase B 试运行；verify 闸门进 collab-runtime
+3. ✅ verify 闸门：`scripts/check-review-evidence.mjs`（仓无关，消费仓 verify 链调一行）
 4. （可选）场景切换建议自动化（水位过线提示，切换动作保留人手）
+
+ai-bridge 与任何消费仓零耦合：route 字段约定在 smart-plan skill、闸门是通用脚本。
+"Phase B 试运行" 是首次真实使用的观察时机，不是构建依赖——能力此刻已就绪。
