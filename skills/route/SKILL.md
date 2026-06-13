@@ -19,7 +19,20 @@ improvise the model.
 | **mechanical** | plan contains complete code + verify steps; execution = transcribe + run verify | executor leg per scenario |
 | **judgment** | plan gave direction but left on-site decisions (tuning, classification, reconcile-with-reality) | executor leg per scenario |
 | **review** | check a diff/output against spec | `xreview` skill (cross-vendor) |
-| **open-ended** | writing spec/plan, architecture arbitration | NOT routable here — planner stays Fable (`smart-plan`), arbitration stays orchestrator |
+| **open-ended** | writing spec/plan, architecture arbitration | NOT routable here — drafting goes to the **planner** role (`smart-plan`), arbitration stays orchestrator |
+
+## Role → model (operational SPOT — change here on model retirement)
+
+Stable role names; the model is the current assignment. Everything else
+references the role, so a model swap is a one-line edit here.
+
+| Role | Model (tier) | Notes |
+|---|---|---|
+| **planner** (spec/plan/arch drafting) | **Opus 4.8 (high)** | was Fable 5; Fable retired → reassigned to Opus 4.8 with a one-tier bump (medium→high) as intelligence compensation |
+| **orchestrator** (this session: acceptance, arbitration, subtle fixes) | Opus 4.8 (medium) | user's session model; the methodology's recommended value |
+| **reviewer** | GPT 5.5 high · Gemini Pro high | cross-vendor panel |
+| **digester** | Gemini Flash | context offload |
+| mechanical / judgment executor | per scenario table below | — |
 
 ## Step 2 — read the current execution scenario
 
@@ -32,7 +45,7 @@ cat ~/.claude/ai-model        # one of: gpt | sonnet | gemini | opus; missing �
 | scenario | mechanical | judgment | review panel |
 |---|---|---|---|
 | **gpt** (default) | GPT 5.5 medium | GPT 5.5 high | GPT high + Gemini |
-| **sonnet** | Sonnet 4.6 medium | Fable/Opus medium | GPT high + Gemini |
+| **sonnet** | Sonnet 4.6 medium | Opus 4.8 medium | GPT high + Gemini |
 | **gemini** | Gemini 3.1 Pro | Opus medium | GPT high + Opus medium |
 | **opus** | Opus medium (subagent) | Opus medium | GPT high + Gemini |
 
@@ -42,8 +55,8 @@ Invariants (do not violate regardless of scenario):
 - **review panel must include a non-executing vendor** — in the gemini scenario
   Gemini is the executor, so it leaves the panel and Opus medium takes its seat.
 - **Claude pool always keeps four things** no matter the scenario:
-  spec/plan/arch (Fable), orchestration + per-task acceptance (Opus), review
-  arbitration (Opus), subtle fixes.
+  spec/plan/arch (planner = Opus 4.8 high), orchestration + per-task acceptance
+  (Opus), review arbitration (Opus), subtle fixes.
 
 ## Step 4 — dispatch
 

@@ -35,7 +35,7 @@ switch takes effect everywhere immediately — no restart.
 
 ## Why switch
 
-Claude pool (Fable/Opus/Sonnet, shared 5x) is the chronic bottleneck → default
+Claude pool (Opus/Sonnet, shared 5x; Fable retired) is the chronic bottleneck → default
 **gpt** keeps execution off it. Switch to **sonnet** when GPT quota is tight,
 **gemini**/**opus** for specific needs. Switching moves only execution volume;
 the Claude pool always retains spec/plan, orchestration, arbitration, subtle

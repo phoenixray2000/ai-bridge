@@ -1,6 +1,6 @@
 ---
 name: smart-plan
-description: Write an implementation plan with the correct model binding. Use whenever you're about to write a plan from a spec — clarification stays in the orchestrator session, but DRAFTING is forced onto the planner model (a Fable subagent) regardless of what model the current session runs, and the output is checked to carry per-task route fields. This prevents the trap of an Opus/Sonnet session silently writing a plan that the methodology requires Fable to write.
+description: Write an implementation plan with the correct model binding. Use whenever you're about to write a plan from a spec — clarification stays in the orchestrator session, but DRAFTING is forced onto the planner-role subagent (see route skill's role table for the current model) regardless of what model the current session runs, and the output is checked to carry per-task route fields. This prevents the trap of a session silently writing a plan with the wrong model.
 ---
 
 # smart-plan — model-bound planning
@@ -8,7 +8,7 @@ description: Write an implementation plan with the correct model binding. Use wh
 `superpowers:writing-plans` governs HOW a plan is written but not WHO writes it.
 Invoked bare from an Opus session, the plan gets written by Opus — violating the
 methodology's most expensive rule (spec/plan/arch must be the planner model,
-currently Fable) and producing a plan with no route fields. This skill closes
+currently Opus 4.8 high — Fable retired) and producing a plan with no route fields. This skill closes
 both holes.
 
 ## Phase 1 — clarify (stays in orchestrator, current session)
@@ -22,9 +22,11 @@ ferry "the discussion" to the subagent.
 
 ## Phase 2 — draft (forced onto the planner model)
 
-Dispatch an Agent with `model: fable` (the planner role; if Fable is retired,
-reassign per the methodology's degradation path — Opus 4.8 with one tier up).
-The subagent prompt must:
+Dispatch an Agent as the **planner** role — see the role→model table in the
+`route` skill for the current assignment (now **`model: opus`**; Fable retired,
+reassigned to Opus 4.8 with a one-tier bump). Trigger high-tier thinking in the
+subagent prompt (e.g. "ultrathink") to honor the planner's high tier, since the
+Agent tool has no separate effort knob. The subagent prompt must:
 - If `superpowers:writing-plans` is available, instruct the subagent to invoke
   it first and follow its discipline. Otherwise use the built-in plan format.
 - Require **every task to carry a `type` field: mechanical / judgment / hazard**
