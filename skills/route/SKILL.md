@@ -1,6 +1,6 @@
 ---
 name: route
-description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies the task (digest / mechanical / judgment / review), reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT via ai_exec, Gemini via agy, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario→model table that all other ai-bridge skills defer to.
+description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies by complexity (low/high) + hazard flag, reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT via ai_exec, Gemini via agy, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario×complexity→model table that all other ai-bridge skills defer to.
 ---
 
 # route — model dispatch
@@ -13,11 +13,17 @@ improvise the model.
 
 ## Step 1 — classify the task
 
+Two orthogonal axes, not one list of types:
+- **complexity** ∈ `low` | `high` — how much intelligence executing it needs.
+  Sets the tier within the scenario pool (Step 3).
+- **hazard** (optional flag) — risk / irreversibility (cutover, delete, storage
+  write-migration). Triggers extra review, NOT a different executor (Step 6).
+
 | Class | Signal | Leg |
 |---|---|---|
-| **digest** | bulk material in, facts out (logs, dumps, repo scans, doc lookups); judgment space ≈ 0 | `ai_digest` (never read the raw material yourself) |
-| **mechanical** | plan contains complete code + verify steps; execution = transcribe + run verify | executor leg per scenario |
-| **judgment** | plan gave direction but left on-site decisions (tuning, classification, reconcile-with-reality) | executor leg per scenario |
+| **digest** | bulk material in, facts out (logs, dumps, repo scans, doc lookups); judgment ≈ 0 | `ai_digest` (never read the raw material yourself) |
+| **execute (low)** | plan has complete code + verify; execution = transcribe + run verify | executor leg per scenario, low tier |
+| **execute (high)** | plan left on-site decisions (tuning, classification, reconcile-with-reality) | executor leg per scenario, high tier |
 | **review** | check a diff/output against spec | `xreview` skill (cross-vendor) |
 | **open-ended** | writing spec/plan, architecture arbitration | NOT routable here — drafting goes to the **planner** role (`smart-plan`), arbitration stays orchestrator |
 
@@ -32,7 +38,7 @@ references the role, so a model swap is a one-line edit here.
 | **orchestrator** (this session: acceptance, arbitration, subtle fixes) | Opus 4.8 (medium) | user's session model; the methodology's recommended value |
 | **reviewer** | GPT 5.5 high · Gemini Pro high | cross-vendor panel |
 | **digester** | Gemini Flash | context offload |
-| mechanical / judgment executor | per scenario table below | — |
+| low / high complexity executor | per scenario × complexity table below | — |
 
 ## Step 2 — read the current routing knob
 
@@ -48,12 +54,20 @@ line drives both execution and the review panel.
 
 ## Step 3 — look up the model (CANONICAL TABLE)
 
-| scenario | mechanical | judgment | review panel |
+Scenario picks the executor pool; **complexity picks the tier inside it** (low →
+medium, high → high). The executor stays consistent within a scenario — judgment
+does NOT silently jump to a pricier model; that's what escalation is for (Step 5).
+
+| scenario | low complexity | high complexity | review panel |
 |---|---|---|---|
 | **gpt** (default) | GPT 5.5 medium | GPT 5.5 high | GPT high + Gemini |
-| **sonnet** | Sonnet 4.6 medium | Opus 4.8 medium | GPT high + Gemini |
-| **gemini** | Gemini 3.1 Pro | Opus medium | GPT high + Opus medium |
-| **opus** | Opus medium (subagent) | Opus medium | GPT high + Gemini |
+| **sonnet** | Sonnet 4.6 medium | Sonnet 4.6 high | GPT high + Gemini |
+| **gemini** | Gemini 3.1 Pro (High) | **Sonnet 4.6 high** | GPT high + Opus medium |
+| **opus** | Opus medium | Opus high | GPT high + Gemini |
+
+- **gemini is the weak executor**: even low complexity needs Pro **High** tier, and
+  high complexity leaves the pool entirely for **Sonnet high** (Gemini high isn't
+  enough). So the gemini scenario only offloads *easy* work to Gemini.
 
 Notes on the panel:
 - **GPT is in every panel when it has quota** — its review is the gold standard,
@@ -79,16 +93,14 @@ the context-saturated orchestrator review), and never dispatch execution to GPT.
 
 `gpt -gpt` is incoherent (kills the executor) → rejected on write.
 
-Execution invariant: **mechanical is always medium** — judgment space is
-compressed; escalate to high only on actual resistance (Step 5). Claude pool always
-keeps spec/plan/arch (planner = Opus 4.8 high), orchestration + per-task
-acceptance, review arbitration, subtle fixes — regardless of scenario.
+Claude pool always keeps spec/plan/arch (planner = Opus 4.8 high), orchestration +
+per-task acceptance, review arbitration, subtle fixes — regardless of scenario.
 
 ## Step 4 — dispatch
 
-- **Claude executor** (sonnet/opus rows) → Agent tool with `model: sonnet` or
-  `model: opus`. Mechanical → a fresh subagent with the task's complete
-  instructions. Pass the plan task verbatim; the subagent has a clean window.
+- **Claude executor** (sonnet/opus rows, or gemini-scenario high complexity) →
+  Agent tool with `model: sonnet` or `model: opus`, a fresh subagent with the
+  task's complete instructions. Pass the plan task verbatim; clean window.
 - **GPT executor** → MCP `ai_exec` with `vendor: "gpt"`, `cwd` = the repo,
   `report_path` set so detailed output lands on disk and stdout stays a summary.
   Reference the plan by path in the prompt (the agent reads it from disk).
@@ -97,16 +109,33 @@ acceptance, review arbitration, subtle fixes — regardless of scenario.
 
 ## Step 5 — escalate on resistance, never preemptively
 
-Default medium. First red → retry medium. Second red unbroken → high. Third red
-/ irreversible cutover / P0 dispute → max. Tier tracks the problem's
-*resistance*, not its *importance*. Escalation targets the specific failing
-point, never re-runs the whole task at a higher tier.
+Start at the (scenario, complexity) cell. On a red that the cell's model can't
+break, **escalate by MODEL to Opus** — not by re-trying a pricier tier of the
+same model:
 
-## Step 6 — report the routing decision
+- non-opus scenario stuck → **Opus high** → still stuck → **Opus max**
+- opus scenario stuck → **Opus max** (Opus escalating itself is the only path to max)
 
-After dispatching, tell the user in one line: what class you assigned, which
-scenario was active, and which model/leg got the work. Routing must be legible,
-not silent.
+So: any pool hands off to Opus **high** first; only Opus-on-Opus reaches **max**.
+Escalation tracks the problem's *resistance*, not its *importance*; it targets the
+specific failing point, never re-runs the whole task. Irreversible-cutover
+pre-flight audits are the one preemptive max (written into the plan, see hazard).
+
+## Step 6 — hazard tasks (orthogonal to complexity)
+
+A task flagged **hazard** (cutover, delete, storage write-migration) keeps its
+complexity-derived executor, but additionally:
+- gets a **task-level cross-vendor review** (`xreview`) — not just the continuous layer;
+- if it's an irreversible-cutover pre-flight audit, run it at **Opus max** (the one
+  preemptive max), written into the plan step.
+
+Hazard is a flag, not a tier — a task can be `low` complexity AND hazard (e.g. a
+one-line but irreversible deletion).
+
+## Step 7 — report the routing decision
+
+After dispatching, tell the user in one line: complexity + hazard?, active
+scenario, and which model/leg got the work. Routing must be legible, not silent.
 
 ## Managed loop vs one-shot
 

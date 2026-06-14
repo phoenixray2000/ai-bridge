@@ -67,6 +67,6 @@ and arbitration is the author side's job (Claude pool). After both return:
 Write the arbitration to `<repo>/docs/superpowers/reviews/<label>-verdict.md`:
 per finding — source / accepted-or-rejected / reason / dispatch target. The
 audit chain is complete: two raw opinions + one disposition record. Confirmed
-fixes dispatch per the current scenario (mechanical → executor, subtle →
+fixes dispatch per the current scenario (low-complexity → executor, subtle →
 orchestrator direct); false positives are rejected with a written reason (never
 accept a cross-vendor finding wholesale — they don't know the repo's conventions).
