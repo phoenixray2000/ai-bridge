@@ -1,6 +1,6 @@
 ---
 name: route
-description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies by complexity (low/high) + hazard flag, reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT via ai_exec, Gemini via agy, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario×complexity→model table that all other ai-bridge skills defer to.
+description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies by complexity (low/high) + critical flag, reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT via ai_exec, Gemini via agy, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario×complexity→model table that all other ai-bridge skills defer to.
 ---
 
 # route — model dispatch
@@ -16,8 +16,10 @@ improvise the model.
 Two orthogonal axes, not one list of types:
 - **complexity** ∈ `low` | `high` — how much intelligence executing it needs.
   Sets the tier within the scenario pool (Step 3).
-- **hazard** (optional flag) — risk / irreversibility (cutover, delete, storage
-  write-migration). Triggers extra review, NOT a different executor (Step 6).
+- **critical** (optional flag) — asymmetric cost if wrong, in either sense:
+  *irreversible* (cutover, delete, storage write-migration) OR *foundational*
+  (high blast radius — later tasks depend on it: an interface, a shared
+  abstraction). Triggers extra review, NOT a different executor (Step 6).
 
 | Class | Signal | Leg |
 |---|---|---|
@@ -117,24 +119,32 @@ same model:
 - opus scenario stuck → **Opus max** (Opus escalating itself is the only path to max)
 
 So: any pool hands off to Opus **high** first; only Opus-on-Opus reaches **max**.
-Escalation tracks the problem's *resistance*, not its *importance*; it targets the
-specific failing point, never re-runs the whole task. Irreversible-cutover
-pre-flight audits are the one preemptive max (written into the plan, see hazard).
+On resistance, the SAME model iterates one or two rounds first (feedback is cheap)
+— only persistent red escalates the model. Escalation tracks *resistance*, not
+*importance*; it targets the specific failing point, never re-runs the whole task,
+and carries the failure context to Opus (codex `resume` for GPT, a fresh
+context-loaded Opus subagent for Claude). Irreversible-cutover pre-flight audits
+are the one preemptive max (written into the plan, see critical).
 
-## Step 6 — hazard tasks (orthogonal to complexity)
+## Step 6 — critical tasks (orthogonal to complexity)
 
-A task flagged **hazard** (cutover, delete, storage write-migration) keeps its
+A task flagged **critical** (irreversible OR foundational, see Step 1) keeps its
 complexity-derived executor, but additionally:
-- gets a **task-level cross-vendor review** (`xreview`) — not just the continuous layer;
+- gets a **task-level cross-vendor review** (`xreview`) — not just the continuous
+  layer. This is where early cross-vendor coverage goes: the high-blast-radius and
+  irreversible tasks, caught before later work compounds on them;
 - if it's an irreversible-cutover pre-flight audit, run it at **Opus max** (the one
   preemptive max), written into the plan step.
 
-Hazard is a flag, not a tier — a task can be `low` complexity AND hazard (e.g. a
-one-line but irreversible deletion).
+Critical is a flag, not a tier — a task can be `low` complexity AND critical (e.g.
+a one-line but irreversible deletion). Non-critical tasks rely on the continuous
+layer (orchestrator two-stage + verify) per task, and the **phase-boundary**
+cross-vendor review as the catch-all — so keep phases small enough that the
+phase-boundary `xreview` fires while the work is still fresh.
 
 ## Step 7 — report the routing decision
 
-After dispatching, tell the user in one line: complexity + hazard?, active
+After dispatching, tell the user in one line: complexity + critical?, active
 scenario, and which model/leg got the work. Routing must be legible, not silent.
 
 ## Managed loop vs one-shot

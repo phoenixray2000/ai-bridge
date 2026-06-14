@@ -30,17 +30,20 @@ Agent tool has no separate effort knob. The subagent prompt must:
 - If `superpowers:writing-plans` is available, instruct the subagent to invoke
   it first and follow its discipline. Otherwise use the built-in plan format.
 - Require **every task to carry a `complexity` field (`low` | `high`)** plus an
-  optional **`hazard`** flag (cutover / delete / storage write-migration). These
-  are two orthogonal axes — a task can be `low` + `hazard`. NOT a hardcoded model
-  name — the model is resolved at execution time by `route` × current scenario ×
-  complexity. The one explicit exception: an irreversible-cutover pre-flight audit
-  may pin `Opus max` in the step.
+  optional **`critical`** flag — set it when the task is *irreversible* (cutover /
+  delete / storage write-migration) OR *foundational* (high blast radius: later
+  tasks depend on it). These are two orthogonal axes — a task can be `low` +
+  `critical`. NOT a hardcoded model name — the model is resolved at execution time
+  by `route` × current scenario × complexity. The one explicit exception: an
+  irreversible-cutover pre-flight audit may pin `Opus max` in the step.
+- Keep **phases small** — the phase-boundary cross-vendor review is the quality
+  catch-all for non-critical tasks; small phases make it fire while work is fresh.
 - Receive the spec path + repo context, NOT this session's chat transcript.
 
 ## Phase 3 — exit check (orchestrator)
 
-Accept the subagent's plan and verify: every task has a `complexity` field; hazard
-tasks carry the flag (→ task-level cross-vendor review); finishing/deletion tasks
-reserve their final "whole-repo zero-reference" check for the orchestrator.
+Accept the subagent's plan and verify: every task has a `complexity` field;
+critical tasks carry the flag (→ task-level cross-vendor review); finishing/deletion
+tasks reserve their final "whole-repo zero-reference" check for the orchestrator.
 Missing `complexity` → bounce it back. The plan format contract becomes a gate, not
 something the author has to remember.
