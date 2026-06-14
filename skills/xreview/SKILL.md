@@ -24,6 +24,16 @@ review is orchestrator-only (Opus two-stage) — **say so loudly**; don't silent
 ship a single-perspective review as if it were cross-vendor. The dual-sign
 evidence requirement relaxes to whatever vendors actually ran.
 
+**Optional Opus panelist** — read `~/.claude/ai-xreview-opus` (`on`/`off`,
+missing = off). When `on`, add an independent **Opus 4.8 medium** reviewer to the
+panel: a FRESH `model: opus` subagent (clean window) that reviews the same
+material by reference and writes its own evidence file `<label>-opus.md`. This is
+NOT the orchestrator's two-stage review — the point is a clean-window pass
+distinct from your context-saturated view. Skip it only in the **opus execution
+scenario** (Opus is the executor there → same-source, no perspective gain).
+Useful when an external vendor is disabled and the panel needs a second
+independent voice.
+
 ## How — review by reference, never inline
 
 For each panel vendor, MCP `ai_review` with:
