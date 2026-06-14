@@ -1,42 +1,64 @@
 ---
 name: ai-model
-description: View or switch the current execution scenario (which model executes tasks). Use when checking what scenario is active, or switching it because a quota pool's water level changed. State lives in ~/.claude/ai-model (single line). The scenario→model mapping itself is in the route skill.
+description: View or switch the execution scenario AND vendor availability in one knob. Use when checking the active routing, switching which model executes (gpt/sonnet/gemini/opus), or marking a vendor as quota-dead. State lives in ~/.claude/ai-model (single line). The review panel is fully derived from this — there are no separate disable / opus-panel switches.
 ---
 
-# ai-model — execution scenario state
+# ai-model — the single routing knob
 
-The execution scenario decides which model gets the execution volume (the bulk
-consumer). Four scenarios, named by the preferred executor: **gpt** (default),
-**sonnet**, **gemini**, **opus**. Full per-class mapping is the canonical table
-in the `route` skill — this skill only manages the state.
+One file, one line, drives everything: which model executes, and which vendors
+are alive. The review panel is **derived** from it (see route skill) — there are
+deliberately NO separate `ai-disabled` / `ai-xreview-opus` files (folded in to
+kill cross-switch conflicts and surface).
 
-State file: `~/.claude/ai-model`, one lowercase word. Missing = `gpt`.
+## Format
+
+`~/.claude/ai-model` = `<scenario>` optionally followed by `-<vendor>` exclusions.
+
+- scenario ∈ `gpt` (default) | `sonnet` | `gemini` | `opus` — the execution side.
+- `-<vendor>` ∈ `-gpt` | `-gemini` — that external vendor is quota-dead: dropped
+  from review panels and never dispatched.
+
+```
+sonnet          # sonnet executes; all vendors alive
+sonnet -gpt     # sonnet executes; GPT is dead (drop from review)
+gpt -gpt        # INCOHERENT — executor excluded; reject on write
+```
+
+Missing file = `gpt` (default).
 
 ## No argument — show current
 
 ```
-cat ~/.claude/ai-model 2>/dev/null || echo "gpt (default, no state file)"
+cat ~/.claude/ai-model 2>/dev/null || echo "gpt (default)"
 ```
 
-Report the active scenario in one line. Do not query quota water levels — that
-was deliberately dropped; the user decides when to switch.
+Report the active scenario + any exclusions in one line, then state the derived
+review panel (apply the route skill's derivation rule). Do not query quota water
+levels — the user decides when to switch.
 
 ## With argument — switch
 
-Validate the argument is one of `gpt|sonnet|gemini|opus`, then:
+Parse the argument into `<scenario>` + optional `-<vendor>` tokens. **Validate:**
+- scenario is one of `gpt|sonnet|gemini|opus`;
+- exclusions are `gpt`/`gemini`;
+- **the scenario's executor is not itself excluded** (`gpt -gpt`, `gemini -gemini`
+  are incoherent → refuse and explain).
+
+Then write the whole line:
 
 ```
-echo <scenario> > ~/.claude/ai-model
+echo "<scenario> [-vendor ...]" > ~/.claude/ai-model
 ```
 
-Confirm the new scenario. The change is global: every session's *next* dispatch
-reads the file fresh (routing never caches the scenario in-session), so the
-switch takes effect everywhere immediately — no restart.
+Confirm the new state AND the derived review panel. The change is global: every
+session's next dispatch reads the file fresh (never cached), so it takes effect
+everywhere immediately — no restart.
 
 ## Why switch
 
-Claude pool (Opus/Sonnet, shared 5x; Fable retired) is the chronic bottleneck → default
-**gpt** keeps execution off it. Switch to **sonnet** when GPT quota is tight,
-**gemini**/**opus** for specific needs. Switching moves only execution volume;
-the Claude pool always retains spec/plan, orchestration, arbitration, subtle
-fixes (see route invariants).
+Claude pool (Opus/Sonnet, shared 5x; Fable retired) is the chronic bottleneck →
+default **gpt** keeps execution off it. Switch to **sonnet**/**gemini**/**opus**
+to move execution volume when GPT (or any pool) is tight. Add `-gpt`/`-gemini`
+when that vendor's quota is dead so it also leaves the review panel. Switching
+moves only execution volume + panel composition; the Claude pool always retains
+spec/plan, orchestration, arbitration, subtle fixes (see route invariants).

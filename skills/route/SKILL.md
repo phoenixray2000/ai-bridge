@@ -34,39 +34,62 @@ references the role, so a model swap is a one-line edit here.
 | **digester** | Gemini Flash | context offload |
 | mechanical / judgment executor | per scenario table below | — |
 
-## Step 2 — read the current execution scenario
+## Step 2 — read the current routing knob
 
 ```
-cat ~/.claude/ai-model        # one of: gpt | sonnet | gemini | opus; missing → gpt (default)
+cat ~/.claude/ai-model        # "<scenario> [-vendor ...]"; missing → gpt (default)
 ```
+
+Parse: a `<scenario>` word (`gpt`/`sonnet`/`gemini`/`opus`) plus optional
+`-gpt`/`-gemini` exclusions (that vendor is quota-dead). This one line drives both
+execution and the derived review panel — there are no separate switch files.
 
 ## Step 3 — look up the model (CANONICAL TABLE)
 
-| scenario | mechanical | judgment | review panel |
-|---|---|---|---|
-| **gpt** (default) | GPT 5.5 medium | GPT 5.5 high | GPT high + Gemini |
-| **sonnet** | Sonnet 4.6 medium | Opus 4.8 medium | GPT high + Gemini |
-| **gemini** | Gemini 3.1 Pro | Opus medium | GPT high + Opus medium |
-| **opus** | Opus medium (subagent) | Opus medium | GPT high + Gemini |
+| scenario | mechanical | judgment |
+|---|---|---|
+| **gpt** (default) | GPT 5.5 medium | GPT 5.5 high |
+| **sonnet** | Sonnet 4.6 medium | Opus 4.8 medium |
+| **gemini** | Gemini 3.1 Pro | Opus medium |
+| **opus** | Opus medium (subagent) | Opus medium |
 
-Invariants (do not violate regardless of scenario):
+Execution invariants:
 - **mechanical is always medium** — judgment space is compressed; don't prepay a
   reasoning tier. Escalate to high only on actual resistance (see Step 5).
-- **review panel must include a non-executing vendor** — in the gemini scenario
-  Gemini is the executor, so it leaves the panel and Opus medium takes its seat.
+- **never dispatch to an excluded vendor** — exclusions can't hit the executor
+  (validated on write), so this only bites if state was hand-edited; fail loud.
 - **Claude pool always keeps four things** no matter the scenario:
   spec/plan/arch (planner = Opus 4.8 high), orchestration + per-task acceptance
   (Opus), review arbitration (Opus), subtle fixes.
 
-**Temporarily-disabled vendors** (quota exhausted): read `~/.claude/ai-disabled`
-(whitespace/comma list of `gpt`/`gemini`; missing = none). Drop disabled vendors
-from the review panel, AND never dispatch execution to one.
-- Review: if dropping leaves the panel with no external vendor, fall back to a
-  single remaining external vendor; if none remain, review is orchestrator-only
-  (Opus two-stage) — **say so loudly** (cross-vendor coverage is reduced this round).
-- Execution: if the current scenario's executor is disabled (e.g. gpt scenario +
-  gpt disabled), do NOT dispatch — tell the user to switch scenario via
-  `/aibridge:ai-model`. Fail loud, don't silently reroute.
+### Review panel — DERIVED (no separate switch)
+
+Build the panel from `(scenario, exclusions)` by one rule:
+
+> Keep **2 non-author, model-distinct reviewers**, preferring external vendors
+> (GPT, Gemini) over Opus; drop any excluded (dead) vendor; if the externals fall
+> short of 2, **backfill with a clean-window Opus 4.8 medium** subagent. The
+> orchestrator's own two-stage review (continuous layer) is always present on top.
+
+"Author" = the execution side: in gpt/gemini scenarios the executor vendor is the
+author; in sonnet/opus scenarios the Claude pool is the author (so Opus is
+author-side and only backfills when externals are short).
+
+| scenario | exclusions | derived panel |
+|---|---|---|
+| gpt | — | Gemini + Opus (GPT is author) |
+| gemini | — | GPT + Opus (Gemini is author) |
+| sonnet | — | GPT + Gemini |
+| opus | — | GPT + Gemini |
+| sonnet | -gpt | Gemini + **Opus backfill** |
+| gpt | -gemini | **Opus backfill** only external is GPT(author)→ Opus; loud: thin |
+
+If the rule can't reach 2 distinct non-author reviewers even with Opus (e.g. both
+externals dead in a Claude scenario → only Opus, partially author-side), review
+is orchestrator-only (Opus two-stage) — **say so loudly**; never pass a
+single-perspective review off as cross-vendor. The Opus backfill is a FRESH
+`model: opus` subagent (clean window, own evidence file) — distinct from the
+context-saturated orchestrator review.
 
 ## Step 4 — dispatch
 

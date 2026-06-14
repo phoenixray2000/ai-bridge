@@ -10,29 +10,28 @@ orchestrator's two-stage review (spec-conformance + code-quality) is always in
 play as the continuous layer; xreview adds outside vendors whose blind spots
 don't overlap.
 
-## Panel selection
+## Panel selection — derived from `~/.claude/ai-model`
 
-Default: **both** GPT + Gemini, in parallel. Argument `gpt` or `gemini`
-restricts to one. The panel must contain at least one **non-executing** vendor —
-if the current scenario's executor is GPT, GPT reviewing its own output is
-same-source; prefer Gemini-led (or add Opus medium) in that case. The orchestrator
-(Claude) review is always present regardless.
+The panel is NOT a separate setting; derive it from the one routing knob exactly
+as the `route` skill does. Read `~/.claude/ai-model` (`<scenario> [-vendor ...]`)
+and apply:
 
-**Honor `~/.claude/ai-disabled`** (quota-exhausted vendors, whitespace/comma list):
-drop any listed vendor from the panel. If that leaves no external vendor, the
-review is orchestrator-only (Opus two-stage) — **say so loudly**; don't silently
-ship a single-perspective review as if it were cross-vendor. The dual-sign
-evidence requirement relaxes to whatever vendors actually ran.
+> Keep **2 non-author, model-distinct reviewers**, preferring external vendors
+> (GPT, Gemini) over Opus; drop any excluded (dead) vendor; if the externals fall
+> short of 2, **backfill with a clean-window Opus 4.8 medium** subagent.
 
-**Optional Opus panelist** — read `~/.claude/ai-xreview-opus` (`on`/`off`,
-missing = off). When `on`, add an independent **Opus 4.8 medium** reviewer to the
-panel: a FRESH `model: opus` subagent (clean window) that reviews the same
-material by reference and writes its own evidence file `<label>-opus.md`. This is
-NOT the orchestrator's two-stage review — the point is a clean-window pass
-distinct from your context-saturated view. Skip it only in the **opus execution
-scenario** (Opus is the executor there → same-source, no perspective gain).
-Useful when an external vendor is disabled and the panel needs a second
-independent voice.
+Author = the execution side (gpt/gemini scenario → that vendor; sonnet/opus →
+Claude pool, so Opus is author-side and only backfills). The orchestrator's own
+two-stage review (continuous layer) is always present on top.
+
+An explicit argument (`gpt` or `gemini`) overrides the derivation to force a
+single vendor for this one run.
+
+The Opus backfill is a FRESH `model: opus` subagent (clean window, own evidence
+file `<label>-opus.md`) — distinct from your context-saturated orchestrator
+review. If the rule can't reach 2 distinct non-author reviewers even with Opus,
+review is orchestrator-only — **say so loudly**; never pass a single-perspective
+review off as cross-vendor. Dual-sign evidence relaxes to whatever vendors ran.
 
 ## How — review by reference, never inline
 
