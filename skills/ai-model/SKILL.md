@@ -12,16 +12,21 @@ kill cross-switch conflicts and surface).
 
 ## Format
 
-`~/.claude/ai-model` = `<scenario>` optionally followed by `-<vendor>` exclusions.
+`~/.claude/ai-model` = `<scenario>` optionally followed by `-gpt`.
 
 - scenario ∈ `gpt` (default) | `sonnet` | `gemini` | `opus` — the execution side.
-- `-<vendor>` ∈ `-gpt` | `-gemini` — that external vendor is quota-dead: dropped
-  from review panels and never dispatched.
+- `-gpt` — GPT quota is dead: drop GPT from review (swap in a clean-window Opus)
+  and never dispatch execution to GPT.
+
+`-gpt` is the ONLY availability flag, on purpose: GPT is the single reviewer that
+is both **top-tier and exhaustible**, so it's the one thing worth toggling.
+Gemini is cheap / ~always available; Opus is your own Claude pool (can't be
+quota-dead). So there's no `-gemini` / `-opus` — they'd be category errors.
 
 ```
-sonnet          # sonnet executes; all vendors alive
-sonnet -gpt     # sonnet executes; GPT is dead (drop from review)
-gpt -gpt        # INCOHERENT — executor excluded; reject on write
+sonnet          # sonnet executes; GPT alive → review GPT + Gemini
+sonnet -gpt     # sonnet executes; GPT dead → review Gemini + Opus
+gpt -gpt        # INCOHERENT — kills the executor; reject on write
 ```
 
 Missing file = `gpt` (default).
@@ -38,11 +43,10 @@ levels — the user decides when to switch.
 
 ## With argument — switch
 
-Parse the argument into `<scenario>` + optional `-<vendor>` tokens. **Validate:**
+Parse the argument into `<scenario>` + optional `-gpt`. **Validate:**
 - scenario is one of `gpt|sonnet|gemini|opus`;
-- exclusions are `gpt`/`gemini`;
-- **the scenario's executor is not itself excluded** (`gpt -gpt`, `gemini -gemini`
-  are incoherent → refuse and explain).
+- the only flag is `-gpt` (reject `-gemini`/`-opus` — category errors, see Format);
+- **`gpt -gpt` is incoherent** (kills the executor) → refuse and explain.
 
 Then write the whole line:
 
@@ -58,7 +62,8 @@ everywhere immediately — no restart.
 
 Claude pool (Opus/Sonnet, shared 5x; Fable retired) is the chronic bottleneck →
 default **gpt** keeps execution off it. Switch to **sonnet**/**gemini**/**opus**
-to move execution volume when GPT (or any pool) is tight. Add `-gpt`/`-gemini`
-when that vendor's quota is dead so it also leaves the review panel. Switching
+to move execution volume when GPT (or any pool) is tight. Add `-gpt` when GPT's
+quota is fully dead so it also leaves the review panel (Opus covers its slot).
+Keep GPT in review whenever it has any quota — it's the strongest reviewer. Switching
 moves only execution volume + panel composition; the Claude pool always retains
 spec/plan, orchestration, arbitration, subtle fixes (see route invariants).

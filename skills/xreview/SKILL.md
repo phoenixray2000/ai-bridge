@@ -10,28 +10,30 @@ orchestrator's two-stage review (spec-conformance + code-quality) is always in
 play as the continuous layer; xreview adds outside vendors whose blind spots
 don't overlap.
 
-## Panel selection — derived from `~/.claude/ai-model`
+## Panel selection — from `~/.claude/ai-model`
 
-The panel is NOT a separate setting; derive it from the one routing knob exactly
-as the `route` skill does. Read `~/.claude/ai-model` (`<scenario> [-vendor ...]`)
-and apply:
+The panel is not a separate setting; take it from the routing knob's per-scenario
+panel (see the `route` skill's canonical table):
 
-> Keep **2 non-author, model-distinct reviewers**, preferring external vendors
-> (GPT, Gemini) over Opus; drop any excluded (dead) vendor; if the externals fall
-> short of 2, **backfill with a clean-window Opus 4.8 medium** subagent.
+| scenario | panel | with `-gpt` (GPT dead) |
+|---|---|---|
+| gpt | GPT high + Gemini | (n/a) |
+| sonnet | GPT high + Gemini | Gemini + Opus |
+| gemini | GPT high + Opus medium | Opus only — thin, **say so** |
+| opus | GPT high + Gemini | Gemini + Opus |
 
-Author = the execution side (gpt/gemini scenario → that vendor; sonnet/opus →
-Claude pool, so Opus is author-side and only backfills). The orchestrator's own
-two-stage review (continuous layer) is always present on top.
+**GPT stays in the panel whenever it has quota** — gold-standard reviewer, kept
+even in the gpt scenario; Gemini + the orchestrator two-stage supply cross-vendor
+coverage and GPT high is added strength (Opus backfill does NOT match it). The
+`-gpt` flag swaps GPT's slot for a clean-window **Opus 4.8 medium** subagent
+(fresh `model: opus`, own evidence file `<label>-opus.md` — distinct from your
+context-saturated orchestrator review). The orchestrator two-stage review is
+always on top.
 
-An explicit argument (`gpt` or `gemini`) overrides the derivation to force a
-single vendor for this one run.
-
-The Opus backfill is a FRESH `model: opus` subagent (clean window, own evidence
-file `<label>-opus.md`) — distinct from your context-saturated orchestrator
-review. If the rule can't reach 2 distinct non-author reviewers even with Opus,
-review is orchestrator-only — **say so loudly**; never pass a single-perspective
-review off as cross-vendor. Dual-sign evidence relaxes to whatever vendors ran.
+An explicit argument (`gpt`/`gemini`) forces a single vendor for this one run.
+If a panel collapses to one external voice, **say so loudly** — never pass a
+single-perspective review off as cross-vendor. Dual-sign evidence relaxes to
+whatever vendors ran.
 
 ## How — review by reference, never inline
 
