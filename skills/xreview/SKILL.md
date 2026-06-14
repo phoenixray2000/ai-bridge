@@ -18,6 +18,12 @@ if the current scenario's executor is GPT, GPT reviewing its own output is
 same-source; prefer Gemini-led (or add Opus medium) in that case. The orchestrator
 (Claude) review is always present regardless.
 
+**Honor `~/.claude/ai-disabled`** (quota-exhausted vendors, whitespace/comma list):
+drop any listed vendor from the panel. If that leaves no external vendor, the
+review is orchestrator-only (Opus two-stage) — **say so loudly**; don't silently
+ship a single-perspective review as if it were cross-vendor. The dual-sign
+evidence requirement relaxes to whatever vendors actually ran.
+
 ## How — review by reference, never inline
 
 For each panel vendor, MCP `ai_review` with:

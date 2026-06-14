@@ -58,6 +58,16 @@ Invariants (do not violate regardless of scenario):
   spec/plan/arch (planner = Opus 4.8 high), orchestration + per-task acceptance
   (Opus), review arbitration (Opus), subtle fixes.
 
+**Temporarily-disabled vendors** (quota exhausted): read `~/.claude/ai-disabled`
+(whitespace/comma list of `gpt`/`gemini`; missing = none). Drop disabled vendors
+from the review panel, AND never dispatch execution to one.
+- Review: if dropping leaves the panel with no external vendor, fall back to a
+  single remaining external vendor; if none remain, review is orchestrator-only
+  (Opus two-stage) — **say so loudly** (cross-vendor coverage is reduced this round).
+- Execution: if the current scenario's executor is disabled (e.g. gpt scenario +
+  gpt disabled), do NOT dispatch — tell the user to switch scenario via
+  `/aibridge:ai-model`. Fail loud, don't silently reroute.
+
 ## Step 4 — dispatch
 
 - **Claude executor** (sonnet/opus rows) → Agent tool with `model: sonnet` or
