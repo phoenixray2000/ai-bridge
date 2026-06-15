@@ -142,6 +142,16 @@ layer (orchestrator two-stage + verify) per task, and the **phase-boundary**
 cross-vendor review as the catch-all — so keep phases small enough that the
 phase-boundary `xreview` fires while the work is still fresh.
 
+The review architecture has **four layers**, earliest first:
+- **Layer 0 — plan-level cross-vendor review** (`smart-plan` Phase 4): the plan
+  itself is reviewed cross-vendor before any task dispatches. Densest-judgment
+  artifact, cheapest fix, fires once per plan — design bugs (decomposition, missing
+  edge cases, dishonest route fields, wrong interface) caught before any code exists.
+- **Layer 1 — continuous** (orchestrator two-stage + verify/redlines/typecheck):
+  per task, every task, free.
+- **Layer 2 — task-level cross-vendor**: critical tasks only (this step).
+- **Layer 3 — phase-boundary cross-vendor**: full-diff catch-all for everything else.
+
 ## Step 7 — report the routing decision
 
 After dispatching, tell the user in one line: complexity + critical?, active
