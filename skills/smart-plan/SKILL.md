@@ -66,6 +66,11 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
 - **By reference, never inline** — MCP `ai_review` with `cwd: <repo>`, prompt gives
   the **spec path + plan path** and tells each reviewer to read both from disk and
   critique the plan against the spec. Same anti-truncation discipline as code review.
+- **Output contract** — append the SAME block defined in `xreview` ("Output
+  contract", SPOT) to every plan-review prompt: findings only
+  (`[BLOCKER|MAJOR|MINOR] <file>:<line> — <problem> → <fix>`), no questions / no
+  offer-to-fix, last line `VERDICT: GREEN` or `VERDICT: NEEDS-FIX`. For a plan the
+  `<file>:<line>` points at the plan/spec location (task name or section).
 - **Plan-review dimensions** (distinct from code review — these check *design*, not
   implementation):
   1. **Decomposition & sequencing** — phases right-sized? dependency order sound?

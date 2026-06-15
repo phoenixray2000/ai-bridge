@@ -53,6 +53,39 @@ Only inline (omit `cwd`) for a standalone snippet that isn't in any repo.
 
 Run the panel vendors concurrently (independent MCP calls in one turn).
 
+## Output contract — append to EVERY `ai_review` prompt (canonical, SPOT)
+
+Reviewers (codex/agy) default to chatty, interactive behavior — they ask "shall I
+fix this?", request confirmation, or start editing. That breaks the model: the
+reviewer's job is to *find*, the orchestrator's job is to *dispatch fixes*. It also
+makes evidence files un-gateable. So every `ai_review` prompt — here AND in
+`smart-plan` Phase 4 (plan review) — must end with this block, reproduced verbatim:
+
+```
+--- OUTPUT CONTRACT (obey exactly) ---
+You are a REVIEWER, not an editor. Do NOT modify any code. Do NOT ask questions.
+Do NOT request confirmation. Do NOT offer to fix anything — "shall I fix this?" /
+"需要我修吗" is FORBIDDEN. The author side dispatches fixes, not you.
+
+Output ONLY these two things, nothing else:
+1. A findings list. Each finding as one block:
+     [BLOCKER|MAJOR|MINOR] <file>:<line> — <problem> → <concrete fix>
+   (No findings is a valid result — then write exactly: No findings.)
+2. The VERY LAST LINE must be exactly one of:
+     VERDICT: GREEN        (no BLOCKER and no MAJOR; MINORs allowed)
+     VERDICT: NEEDS-FIX    (at least one BLOCKER or MAJOR)
+Nothing may follow the VERDICT line.
+```
+
+Severity → verdict is mechanical: any BLOCKER/MAJOR ⇒ `NEEDS-FIX`, else `GREEN`.
+The last-line `VERDICT:` token is what makes the evidence file machine-checkable —
+the phase gate `check-review-evidence.mjs --verdict-lines` asserts each vendor file
+ends with one and fails loudly otherwise. A review whose evidence file has no
+terminal `VERDICT:` line is malformed; re-run it, don't hand-summarize. The
+orchestrator still arbitrates findings (below) — the reviewer's `VERDICT` is its own
+opinion, NOT the final disposition (the gate reports the vendor verdicts; the
+`<label>-verdict.md` arbitration record is where GREEN/NEEDS-FIX is *decided*).
+
 ## Arbitration — yours, never the vendors'
 
 Do NOT ask one vendor to merge the other's findings — merging IS arbitration,
