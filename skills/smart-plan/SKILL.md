@@ -1,6 +1,6 @@
 ---
 name: smart-plan
-description: Write an implementation plan with the correct model binding. Use whenever you're about to write a plan from a spec — clarification stays in the orchestrator session, but DRAFTING is forced onto the planner-role subagent (see route skill's role table for the current model) regardless of what model the current session runs, and the output is checked to carry per-task route fields. This prevents the trap of a session silently writing a plan with the wrong model.
+description: Write an implementation plan with the correct model binding AND cross-vendor design review. Use whenever you're about to write a plan from a spec. Clarification stays in the orchestrator session; DRAFTING is forced onto the planner-role subagent (Opus 4.8 high); the draft is then gated by a mechanical route-fields check AND a cross-vendor plan review (Layer 0) across 6 design dimensions before any task dispatches. This catches design bugs at plan-edit cost, before they compound into code.
 ---
 
 # smart-plan — model-bound planning
