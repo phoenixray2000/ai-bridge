@@ -71,6 +71,9 @@ Output ONLY these two things, nothing else:
 1. A findings list. Each finding as one block:
      [BLOCKER|MAJOR|MINOR] <file>:<line> — <problem> → <concrete fix>
    (No findings is a valid result — then write exactly: No findings.)
+   If a finding proposes NEW capability ("also build X"), cite the spec section
+   that requires it, or mark it "(grounding: <source>)" — an addition the spec's
+   non-goals exclude is NOT a finding, do not raise it.
 2. The VERY LAST LINE must be exactly one of:
      VERDICT: GREEN        (no BLOCKER and no MAJOR; MINORs allowed)
      VERDICT: NEEDS-FIX    (at least one BLOCKER or MAJOR)
@@ -103,3 +106,28 @@ audit chain is complete: two raw opinions + one disposition record. Confirmed
 fixes dispatch per the current scenario (low-complexity → executor, subtle →
 orchestrator direct); false positives are rejected with a written reason (never
 accept a cross-vendor finding wholesale — they don't know the repo's conventions).
+
+### Ground every ADDITIVE finding before accepting it
+
+Adversarial review is biased toward *addition* — a reviewer scores by finding more
+to do. Most of that is gold: real bugs, fail-loud holes, grounding errors (a plan
+referencing code that doesn't exist). Keep all of it. But a finding that proposes
+**building something new** ("you should ALSO handle X", "add a Y block/path/layer")
+gets one extra gate before it enters the artifact:
+
+- **Is it foreclosed by an existing contract?** Check the spec's non-goals (§非目标)
+  and the actual source. If the spec already excluded it, or source already proves
+  the premise false → **reject the finding**, cite the spec section / source line.
+  Do NOT build it, do NOT let a later round harden it. (This is the one failure mode
+  that turns a healthy multi-round review into churn: a reviewer proposed work the
+  contract had already answered, and nobody checked the contract for two rounds.)
+- **Does it rest on a code belief not yet verified?** Then ground it against source
+  *before* accepting — confirm the premise, don't build on the hypothesis.
+- **Is it a genuine spec gap** (the spec is wrong/incomplete, only visible now)? Then
+  it is a **spec change**, not a plan patch — route it back to clarify (re-open the
+  spec), don't improvise new machinery inside the review loop.
+
+Additive findings that survive this gate are real and welcome. The gate is narrow: it
+only fires on "add new capability", never on "this existing thing is wrong/unsafe"
+(those — the bulk of review value — pass straight through). Removing machinery is
+always fine; the gate is asymmetric by design.
