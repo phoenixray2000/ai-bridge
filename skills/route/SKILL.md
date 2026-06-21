@@ -164,3 +164,28 @@ i.e. it's a plan task — run the **managed loop**: dispatch → verify + two-st
 review → on red, arbitrate (small fix directly / continue the vendor via
 `ai_exec` `resume`) → green → next task. A bare `/ai-bridge:gpt` call with no
 contract is one-shot. The contract is the dividing line.
+
+## Closing gate — whole-implementation xreview (Layer 3-final)
+
+When the **last** task of a plan goes green, do NOT declare done yet. Practice
+shows a final cross-vendor review **of the entire accumulated diff** catches
+substantive problems the per-phase reviews structurally cannot: cross-phase
+integration breaks, emergent inconsistencies, a seam two phases each half-built.
+Phase-boundary review (Layer 3) sees one phase's diff; this sees the whole.
+
+So the managed loop has a mandatory closing step — automatic, not optional:
+
+1. Run `xreview` on the **full plan diff** (`git diff <plan-base>..HEAD`, all changed
+   paths, against the spec) — same panel/contract/evidence as any xreview, label
+   `final-<plan-name>`.
+2. **Arbitrate** into `final-<plan-name>-verdict.md` (same additive-finding gate —
+   a whole-diff reviewer is just as prone to "you should also build X").
+3. **Dispatch the confirmed fixes** through the same managed loop (low-complexity →
+   executor, subtle → orchestrator direct), re-verify.
+4. **Re-run the whole-diff xreview** until it returns `VERDICT: GREEN`. Only then is
+   the plan done.
+
+This is the execution-side mirror of Layer 0: Layer 0 gates the plan before any code;
+this gates the whole implementation before done. Both are whole-artifact cross-vendor
+passes; both loop-until-green. Scope: plan execution only (the managed loop) — a
+one-shot call has no whole-diff to close on.

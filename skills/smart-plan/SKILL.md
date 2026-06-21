@@ -38,16 +38,23 @@ Agent tool has no separate effort knob. The subagent prompt must:
   irreversible-cutover pre-flight audit may pin `Opus max` in the step.
 - Keep **phases small** — the phase-boundary cross-vendor review is the quality
   catch-all for non-critical tasks; small phases make it fire while work is fresh.
+- End the plan with a mandatory **closing gate: whole-implementation xreview** —
+  after the last real task, a final cross-vendor review of the ENTIRE plan diff
+  (`git diff <plan-base>..HEAD` vs the spec), loop-until-green, before done. This is
+  the execution-side mirror of Phase 4 / Layer 0 and catches cross-phase integration
+  breaks the per-phase reviews can't (see `route` "Closing gate"). It is a step, not
+  a model choice — the planner just writes it in as the terminal gate.
 - Receive the spec path + repo context, NOT this session's chat transcript.
 
 ## Phase 3 — exit check (orchestrator, mechanical gate)
 
 Accept the subagent's plan and verify: every task has a `complexity` field;
 critical tasks carry the flag (→ task-level cross-vendor review); finishing/deletion
-tasks reserve their final "whole-repo zero-reference" check for the orchestrator.
-Missing `complexity` → bounce it back. The plan format contract becomes a gate, not
-something the author has to remember. This is a *mechanical* check — it does not
-read the plan's design judgment. That's Phase 4.
+tasks reserve their final "whole-repo zero-reference" check for the orchestrator;
+**the plan ends with the closing whole-implementation xreview gate**. Missing
+`complexity` or the closing gate → bounce it back. The plan format contract becomes a
+gate, not something the author has to remember. This is a *mechanical* check — it does
+not read the plan's design judgment. That's Phase 4.
 
 ## Phase 4 — plan-level cross-vendor review (Layer 0 of the review architecture)
 
