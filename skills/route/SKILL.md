@@ -121,10 +121,12 @@ same model:
 So: any pool hands off to Opus **high** first; only Opus-on-Opus reaches **max**.
 On resistance, the SAME model iterates one or two rounds first (feedback is cheap)
 — only persistent red escalates the model. Escalation tracks *resistance*, not
-*importance*; it targets the specific failing point, never re-runs the whole task,
-and carries the failure context to Opus (codex `resume` for GPT, a fresh
-context-loaded Opus subagent for Claude). Irreversible-cutover pre-flight audits
-are the one preemptive max (written into the plan, see critical).
+*importance*; it targets the specific failing point, never re-runs the whole task.
+The SAME-model retry uses resume (GPT `ai_exec resume` — continuation case 1 below);
+the **escalation to Opus is always a fresh Opus subagent + handoff brief** (you can't
+resume across models anyway — codex session ≠ Claude subagent), per the Continuation
+rules. Irreversible-cutover pre-flight audits are the one preemptive max (written into
+the plan, see critical).
 
 ## Step 6 — critical tasks (orthogonal to complexity)
 
@@ -164,6 +166,38 @@ i.e. it's a plan task — run the **managed loop**: dispatch → verify + two-st
 review → on red, arbitrate (small fix directly / continue the vendor via
 `ai_exec` `resume`) → green → next task. A bare `/ai-bridge:gpt` call with no
 contract is one-shot. The contract is the dividing line.
+
+## Continuation — handoff-first; resume is a CLOSED exception
+
+Continuing a dev task across dispatches defaults to **fresh-spawn + a handoff brief**,
+NOT resuming the prior executor. Clean window beats full context (P4: the window is
+costlier than quota — a resumed session drags every dead-end and verbose tool dump
+back in).
+
+**Handoff brief — the continuation carrier (5 fields, always):**
+1. **Done** — to which task / commit.
+2. **Remaining** — what's left.
+3. **Tried-and-failed** — dead ends, so the next agent doesn't repeat them.
+4. **Anchors** — key `file:line`.
+5. **Acceptance contract** — verify + spec check.
+
+One brief serves BOTH a same-model continuation AND a cross-model escalation.
+
+**Resume is permitted in EXACTLY these two cases — nothing else:**
+1. **Same-diff review-fix, same vendor.** Applying confirmed xreview findings to the
+   diff the SAME executor just produced — GPT via `ai_exec resume: <sessionId>` (the
+   codex session IS that diff's working state). This is the managed-loop on-red path.
+2. **A single tightly-coupled task you are driving turn-by-turn in ONE sitting** — a
+   Claude subagent kept alive via `run_in_background: true` + SendMessage, where
+   re-briefing each micro-step would cost more than the pollution, and it does NOT
+   cross a compaction.
+
+If the situation is not LITERALLY one of those two → fresh-spawn + handoff. The list is
+**closed**: "this feels like it needs the context" is NOT a third case. Specifically
+NEVER resume for — the next plan task (each task = clean window), a different model
+(impossible anyway), after the prior context went down a failed path (that pollution
+is exactly what you're escaping), across turns / after compaction / a lost agent, or
+Gemini (agy has no resume). When in doubt, handoff.
 
 ## Closing gate — whole-implementation xreview (Layer 3-final)
 
