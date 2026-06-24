@@ -27,10 +27,21 @@ const vendors = arg("vendors", "gpt,gemini").split(",").map((v) => v.trim()).fil
 const dir = path.resolve(arg("dir", path.join("docs", "superpowers", "reviews")));
 const requireVerdict = has("verdict");
 const requireVerdictLines = has("verdict-lines");
+const gptDead = has("gpt-dead");
 
 if (!label) {
   console.error("ERROR: --label is required (e.g. --label phase-b)");
   process.exit(2);
+}
+
+// 铁律: GPT is MANDATORY in any gating review unless GPT quota is dead (then the
+// panel swaps to Opus, never to Gemini-only). A gate without GPT and without an
+// explicit --gpt-dead is the single-vendor-Gemini leak — fail loud, don't pass it.
+if (!gptDead && !vendors.includes("gpt")) {
+  console.error(`REVIEW GATE FAILED for "${label}": GPT missing from a gating review (vendors: ${vendors.join(", ")}).`);
+  console.error(`GPT is mandatory while it has quota — single-vendor Gemini is forbidden as a gate.`);
+  console.error(`If GPT quota is genuinely dead, pass --gpt-dead (panel should then carry opus, not gemini-only).`);
+  process.exit(1);
 }
 
 const required = vendors.map((v) => path.join(dir, `${label}-${v}.md`));

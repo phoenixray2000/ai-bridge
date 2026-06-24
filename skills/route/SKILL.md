@@ -72,10 +72,14 @@ does NOT silently jump to a pricier model; that's what escalation is for (Step 5
   enough). So the gemini scenario only offloads *easy* work to Gemini.
 
 Notes on the panel:
-- **GPT is in every panel when it has quota** — its review is the gold standard,
-  worth keeping even in the gpt scenario (it reviews its own output, but Gemini +
-  the orchestrator's two-stage still supply the cross-vendor perspective; GPT high
-  is pure added strength, and Opus backfill does NOT match it).
+- **GPT is in every panel when it has quota — MANDATORY, not preferential.** Its
+  review is the gold standard. A gating review (phase boundary / Layer 0 / critical
+  task / closing gate) that runs while GPT has quota **must include GPT**; **single-
+  vendor Gemini as a gate is forbidden** (it dropped the gold standard — broken, not
+  "light"). Gemini is the second voice *alongside* GPT, never its substitute. The only
+  legitimate lightness lever is **frequency** (review fewer tasks), never "swap GPT for
+  cheaper Gemini-only". The ONLY thing that removes GPT is `-gpt` (quota dead), which
+  swaps to **Opus**, not to Gemini-only. (See xreview "铁律".)
 - The **executor's own vendor leaves** the panel only when it isn't GPT: gemini
   scenario → Gemini steps out, Opus takes the seat.
 - The **orchestrator two-stage review (continuous layer) is always on top**, every

@@ -30,10 +30,26 @@ coverage and GPT high is added strength (Opus backfill does NOT match it). The
 context-saturated orchestrator review). The orchestrator two-stage review is
 always on top.
 
-An explicit argument (`gpt`/`gemini`) forces a single vendor for this one run.
-If a panel collapses to one external voice, **say so loudly** — never pass a
-single-perspective review off as cross-vendor. Dual-sign evidence relaxes to
-whatever vendors ran.
+### 铁律 — GPT is MANDATORY in any gating review while it has quota
+
+A gating review (phase boundary, plan review / Layer 0, critical task, closing gate)
+that runs **must include GPT** unless `~/.claude/ai-model` carries `-gpt` (GPT quota
+dead). **Single-vendor Gemini is FORBIDDEN as a gate.** Gemini is the *second voice
+alongside* GPT (perspective diff), never a substitute for it — a Gemini-only gate
+isn't a "lighter" review, it's a broken one that dropped the gold standard.
+
+The one legitimate way to make review lighter is **frequency** — run a gate on fewer
+tasks (only critical tasks get task-level review; non-critical rely on the continuous
+layer + phase boundary). Lightness is NEVER "swap GPT for cheaper Gemini-only". If
+you're tempted to skip GPT to save cost, the correct move is to not run that gate at
+all (trust verify), not to run a degraded one. If GPT genuinely has no quota, set
+`-gpt` (which swaps to Opus, NOT to Gemini-only) and say so.
+
+An explicit single-vendor argument (`gpt`/`gemini`) is ONLY for an **ad-hoc one-shot
+opinion** (`/aibridge:gemini` for a quick second look) — NEVER for a managed gate.
+If any gate's panel collapses to one external voice, **say so loudly** and never pass
+a single-perspective review off as cross-vendor. Dual-sign evidence relaxes to
+whatever vendors ran — but a missing GPT (without `-gpt`) is a defect, not a relaxation.
 
 ## How — review by reference, never inline
 
