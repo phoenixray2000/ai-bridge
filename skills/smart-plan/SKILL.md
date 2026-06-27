@@ -75,9 +75,21 @@ gate — not a limit on rounds.
 
 After the mechanical gate passes, run a cross-vendor review **of the plan itself**:
 
-- **Panel** — identical derivation to code `xreview`: take it from `~/.claude/ai-model`
-  (route's canonical per-scenario panel; `-gpt` swaps GPT's slot for a clean-window
-  Opus medium). No new panel logic. Do NOT duplicate the table — defer to `route`.
+- **Panel — FIXED external panel, NOT the per-scenario code-review table.** A plan's
+  author is ALWAYS the **planner (Opus 4.8 high)**, independent of the execution
+  scenario. So the panel does NOT vary by scenario and does NOT borrow code-review's
+  "executor's own vendor leaves the panel" logic — that logic is keyed to the *scenario
+  executor*, which is irrelevant when the author is always Opus. Mis-applying it drops
+  GPT in the gpt scenario — the exact bug this fixes.
+  - **Plan-review panel = GPT + Gemini, fixed** — both external to the Opus author =
+    maximal independence. **GPT is mandatory** (铁律, see xreview) and is *especially*
+    load-bearing here: the only same-family fallback is Opus, which shares the Opus
+    planner's blind spots (weak independence). Empirically GPT has solo-caught MAJORs
+    that both other voices missed on a plan.
+  - **`-gpt` (GPT quota dead)** → Gemini + a clean-window Opus, but **say loudly this
+    round is thin on independence**: the Opus reviewer is the SAME family as the Opus
+    planner (correlated blind spots), so treat its agreement with caution. Never drop to
+    Gemini-only.
 - **By reference, never inline** — MCP `ai_review` with `cwd: <repo>`, prompt gives
   the **spec path + plan path** and tells each reviewer to read both from disk and
   critique the plan against the spec. Same anti-truncation discipline as code review.

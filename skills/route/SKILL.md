@@ -84,6 +84,11 @@ Notes on the panel:
   scenario → Gemini steps out, Opus takes the seat.
 - The **orchestrator two-stage review (continuous layer) is always on top**, every
   scenario, every task — the guaranteed floor.
+- **This per-scenario table is for CODE review only** (the panel keys off the *scenario
+  executor*). **Plan review (Layer 0) does NOT use it** — a plan's author is always the
+  planner (Opus), independent of scenario, so plan review uses a FIXED external panel
+  (GPT + Gemini, GPT mandatory); applying the executor-keyed table to a plan drops GPT
+  in the gpt scenario. See `smart-plan` Phase 4.
 
 ### `-gpt` modifier (GPT quota dead)
 
