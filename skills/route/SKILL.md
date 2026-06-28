@@ -225,8 +225,20 @@ So the managed loop has a mandatory closing step — automatic, not optional:
    a whole-diff reviewer is just as prone to "you should also build X").
 3. **Dispatch the confirmed fixes** through the same managed loop (low-complexity →
    executor, subtle → orchestrator direct), re-verify.
-4. **Re-run the whole-diff xreview** until it returns `VERDICT: GREEN`. Only then is
+4. **Re-run the WHOLE-diff xreview** until it returns `VERDICT: GREEN`. Only then is
    the plan done.
+
+**"Re-run the whole diff" is a LITERAL contract — a focused re-review CANNOT substitute.**
+Each closing-gate round re-reviews the **entire** `git diff <plan-base>..HEAD` afresh,
+NOT just the findings you fixed. Re-checking only the patched spots ("did A/B/C get
+fixed?") does NOT clear the gate: a fix can regress or break a seam elsewhere, and the
+whole-diff pass exists precisely for that integration-level coverage — re-scoping it to
+the fixes reintroduces the exact blind spot the gate was built to close. The gate is
+cleared ONLY by a full whole-diff xreview returning GREEN.
+
+(This is the deliberate exception to the focused-re-review rule used for per-finding
+arbitration and Step-5 escalation — those narrow to the disputed point because they're
+*not* gates. The closing gate IS the gate, so it is always whole-diff.)
 
 This is the execution-side mirror of Layer 0: Layer 0 gates the plan before any code;
 this gates the whole implementation before done. Both are whole-artifact cross-vendor
