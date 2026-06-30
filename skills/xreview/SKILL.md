@@ -69,6 +69,23 @@ Only inline (omit `cwd`) for a standalone snippet that isn't in any repo.
 
 Run the panel vendors concurrently (independent MCP calls in one turn).
 
+### Visual conformance — when a visual contract exists
+
+If the change ships UI and the spec pins a **visual contract** (a demo + load-bearing
+visual assertions, see `smart-plan` Phase 1), the review carries an extra dimension:
+**does the rendered output honor the demo's load-bearing decisions?** Two levels, by
+design (no pixel-diff — brittle, high-noise):
+- The **DOM/structural assertions** are the plan's verify job (control exists, section
+  order, each state's distinct treatment) — deterministic floor.
+- xreview adds the **judgment** the floor can't hold: give the reviewer the demo path +
+  the changed UI files + the visual assertions, and ask whether the implementation
+  honors the demo's hierarchy / grouping / affordances / state treatments. Findings
+  cite the violated **load-bearing** assertion — incidental demo details (placeholder
+  text, default colors) are NOT contract and must not be flagged (additive-finding gate
+  applies: don't gold-plate against the demo's incidental pixels).
+This is the visual analog of catching 假接入: the gate must check the real rendered
+outcome against the design intent, not a proxy ("the component file exists").
+
 ## Output contract — append to EVERY `ai_review` prompt (canonical, SPOT)
 
 Reviewers (codex/agy) default to chatty, interactive behavior — they ask "shall I

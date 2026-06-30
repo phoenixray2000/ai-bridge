@@ -20,6 +20,26 @@ artifact, not the chat history**. If the eventual drafting brief can't be
 covered by the spec, the spec is incomplete — go back and fill it, don't try to
 ferry "the discussion" to the subagent.
 
+### When a UI demo / mockup exists — capture it as a VISUAL CONTRACT
+
+A demo carries visual/UX decisions text can't fully hold (hierarchy, which
+controls exist, grouping & order, distinct state treatments, affordances). If it
+stays a throwaway "reference", the implementer reinterprets the gaps and the
+shipped page drifts far from the demo. The fix is SPOT: the demo joins the spec as
+an authoritative artifact, not a sketch. So when a demo exists:
+
+1. **Pin the demo by path** in the spec as the authoritative visual source.
+2. **Distill its LOAD-BEARING decisions into explicit visual assertions** —
+   information hierarchy, which controls exist, grouping/order, each state's
+   distinct rendered treatment, key affordances. **Mark each as contract vs.
+   illustrative** — incidental choices (placeholder text, lorem, default colors)
+   are NOT contract. Asserting the whole demo pixel-for-pixel over-constrains and
+   breeds gold-plating churn; the load-bearing assertions are the floor-and-ceiling.
+3. These assertions are **checkable** (Phase 2 wires them into verify + xreview),
+   which is what makes "looks nothing like the demo" a caught defect rather than a
+   silently-shipped one — the visual analog of "verify must prove the JS is really
+   wired, not just that the HTML renders".
+
 ## Phase 2 — draft (forced onto the planner model)
 
 Dispatch an Agent as the **planner** role — see the role→model table in the
@@ -38,6 +58,13 @@ Agent tool has no separate effort knob. The subagent prompt must:
   irreversible-cutover pre-flight audit may pin `Opus max` in the step.
 - Keep **phases small** — the phase-boundary cross-vendor review is the quality
   catch-all for non-critical tasks; small phases make it fire while work is fresh.
+- **When a visual contract exists** (Phase 1): every UI task must carry the relevant
+  **load-bearing visual assertions as acceptance criteria**, and its **verify script
+  must assert them at the DOM/structural level against the RENDERED output** (parse the
+  rendered HTML/DOM: control exists, section order, each state's distinct treatment) —
+  NOT a screenshot pixel-diff (brittle), NOT "the component file exists" (that's the
+  假接入 proxy). The judgment-level "does it honor the demo's feel" check is xreview's
+  visual-conformance dimension, not the plan's verify.
 - End the plan with a mandatory **closing gate: whole-implementation xreview** —
   after the last real task, a final cross-vendor review of the ENTIRE plan diff
   (`git diff <plan-base>..HEAD` vs the spec), loop-until-green, before done. This is
@@ -51,9 +78,11 @@ Agent tool has no separate effort knob. The subagent prompt must:
 Accept the subagent's plan and verify: every task has a `complexity` field;
 critical tasks carry the flag (→ task-level cross-vendor review); finishing/deletion
 tasks reserve their final "whole-repo zero-reference" check for the orchestrator;
-**the plan ends with the closing whole-implementation xreview gate**. Missing
-`complexity` or the closing gate → bounce it back. The plan format contract becomes a
-gate, not something the author has to remember. This is a *mechanical* check — it does
+**the plan ends with the closing whole-implementation xreview gate**; **if a visual
+contract exists, every UI task references its load-bearing assertions and its verify
+asserts them at the DOM level**. Missing `complexity`, the closing gate, or (when a
+demo exists) the visual-contract wiring → bounce it back. The plan format contract
+becomes a gate, not something the author has to remember. This is a *mechanical* check — it does
 not read the plan's design judgment. That's Phase 4.
 
 ## Phase 4 — plan-level cross-vendor review (Layer 0 of the review architecture)
@@ -116,6 +145,11 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
   5. **Verify-contract adequacy** — does every task carry a real acceptance contract
      (verify + spec check)? A task with no verify can't run the managed loop.
   6. **Spec alignment** — does the plan implement the spec, or did the planner drift?
+  7. **Visual-contract wiring** (only when a demo / visual contract exists) — do the UI
+     tasks carry the load-bearing visual assertions as acceptance, and does their verify
+     assert them at the DOM level against rendered output (not pixel-diff, not "file
+     exists")? A UI plan that will visibly drift from the demo must be caught HERE,
+     before code — not after the page ships looking wrong.
 - **Evidence + arbitration** — each vendor's findings land in
   `<repo>/docs/superpowers/reviews/plan-<name>-<vendor>.md`; **you (orchestrator)
   arbitrate** into `plan-<name>-verdict.md` — never ask one vendor to merge the
