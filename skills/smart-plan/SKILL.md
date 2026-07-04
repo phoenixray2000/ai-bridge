@@ -94,13 +94,22 @@ one plan edit; the same bug caught in code costs a rebuilt phase. This is the
 earliest, highest-leverage review in the system — one review *track* per plan (not
 per task), iterated over rounds until it converges.
 
-**Round count is NOT the cost signal — convergence is.** A genuinely intricate plan
-(exact reconciliation, multi-provider invariants, hard-cut schema) legitimately needs
-several rounds and earns its keep catching ~dozens of real design bugs before any
-code exists; that depth is proportional, not waste. So there is **no round cap** (a cap
-would cut off a hard plan before its architecture settles and ship something worse).
-The guard against churn is the convergence trajectory (below) + the additive-finding
-gate — not a limit on rounds.
+**GREEN = the latest round has no BLOCKER/MAJOR** — do NOT chase findings to zero.
+MINORs are recorded and carried into execution as tracked cleanups; once no
+BLOCKER/MAJOR remain, the plan is executable. The old "loop to 0 findings + a clean
+confirmation round" burned a trailing pure-confirmation round (the `3→3→0` / `1→1→0`
+tails) — dropped, saving ~1 round per plan (typically 4→3).
+
+**A flake is NOT a round.** An agy empty-stdout retry or a GPT `token_revoked`
+seat-handling is retried/handled WITHIN the same round; only a findings-producing
+cross-vendor pass advances the round counter. Flakes must not pollute the trajectory
+or burn toward the cap.
+
+Round count is not the primary cost signal — the convergence trajectory (below) is —
+but pathological churn IS capped: **at 8 real rounds without GREEN, STOP and escalate
+to the user** for an architectural call (continue / restructure the spec / abort). The
+cap is an **escalation trigger, not an auto-green** — it never ships a worse plan, it
+hands judgment to a human (a 13-round churn should hit a mechanism, not grind on).
 
 After the mechanical gate passes, run a cross-vendor review **of the plan itself**:
 
@@ -119,9 +128,28 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
     round is thin on independence**: the Opus reviewer is the SAME family as the Opus
     planner (correlated blind spots), so treat its agreement with caution. Never drop to
     Gemini-only.
+  - **Gemini seat = R1 + closing gate only; GPT-solo on middle rounds.** Ledger:
+    Gemini's real plan value is narrow (design-eye findings — visual-coverage gaps, CSS
+    specificity), while it has produced hallucinated "unimplemented" findings (pure
+    arbitration cost), missed BLOCKERs GPT caught, and rogue-edited the tree. So run
+    **GPT + Gemini on R1** (design breadth) and again at the **closing gate**; **R2..R(n-1)
+    = GPT solo**. GPT-solo is NOT the forbidden Gemini-solo — GPT (the gold standard) is
+    present, and GPT-external + the orchestrator two-stage keep cross-vendor perspective;
+    full independence is preserved at the two heaviest gates (R1 + endgame), which is enough.
+  - **agy flake → SKIP Gemini this round** (GPT anchors, note Gemini absent) — do NOT
+    spin up the clean-Opus substitute (that is only for `-gpt`, GPT genuinely dead) and
+    do NOT start a seat-swap arbitration to force a Gemini vote. Clustered agy restarts
+    provoke a browser OAuth re-consent (see xreview degrade policy); a Gemini flake on
+    R1 / closing gate simply runs that round GPT-solo.
 - **By reference, never inline** — MCP `ai_review` with `cwd: <repo>`, prompt gives
   the **spec path + plan path** and tells each reviewer to read both from disk and
   critique the plan against the spec. Same anti-truncation discipline as code review.
+- **R1 full, R2+ delta.** R1 reviews the whole plan. From R2, review only the **delta**:
+  the fixes to the previous round's findings + the plan's changed sections (the plan
+  diff since last round). Late-round real catches are regressions / misfixes, which live
+  in that delta; full re-reads of unchanged sections are pure cost. (Plan review ONLY —
+  the **closing gate stays literal whole-diff**, because *code* fixes regress across
+  seams; a *text plan's* sections are modular, so delta is safe here but not there.)
 - **Output contract** — append the SAME block defined in `xreview` ("Output
   contract", SPOT) to every plan-review prompt: findings only
   (`[BLOCKER|MAJOR|MINOR] <file>:<line> — <problem> → <fix>`), no questions / no
@@ -160,14 +188,14 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
   failure mode that turns a healthy multi-round review into churn (a reviewer proposes
   spec-excluded work, nobody checks the contract, later rounds harden it).
 - **Verdict must record the convergence trajectory.** In `plan-<name>-verdict.md`, each
-  round appends: round N, findings (count + max severity), and **did the architecture
-  settle?** This is the real churn instrument (not a round cap). Read it qualitatively:
-  a falling count that bottoms at 0 is healthy convergence; a round where the count
-  **rises** is fine *if the cause is REMOVING machinery* (a simplification touches many
-  sites) but a **warning sign if the cause is ADDING machinery** (review-induced scope
-  creep — re-run the additive-finding gate on every new item). "Findings 9→5→3→5→2→0,
-  architecture settled at round 4" is a clean trajectory; the round-4 bump was a
-  removal.
+  **real** round (flakes excluded) appends: round N, findings (count + max severity), and
+  **did the architecture settle?** The trajectory is the churn instrument; the 8-round
+  escalation cap is the hard backstop behind it. Read it qualitatively: a falling
+  max-severity that bottoms at **no BLOCKER/MAJOR is GREEN** (not "count = 0"); a round
+  where the count **rises** is fine *if the cause is REMOVING machinery* (a simplification
+  touches many sites) but a **warning sign if the cause is ADDING machinery** (review-
+  induced scope creep — re-run the additive-finding gate on every new item). "Findings
+  9→5→3→2(all MINOR)→GREEN, architecture settled at round 4" is a clean trajectory.
 - **On red** — a confirmed design flaw goes back to the **planner** role (Opus 4.8
   high) to revise; a deep architectural dispute stays with the **orchestrator**
   (open-ended arbitration never leaves the orchestrator). Re-review the revision.

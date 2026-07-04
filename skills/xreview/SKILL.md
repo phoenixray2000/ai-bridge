@@ -58,10 +58,12 @@ GENTLE bounded retry internally — 2 attempts, long backoff). If it STILL fails
 carries `degrade: true`), do **NOT** re-invoke agy in a loop to force a Gemini result:
 **clustered agy cold-starts provoke a full browser OAuth `prompt=consent` re-login**
 (a Google account-risk-control exposure, observed even with a valid token). Instead
-**degrade the Gemini seat**: fill it with a clean-window Opus (as under `-gpt`), keep
-GPT as the anchor (铁律 still holds — GPT is present), and **note in the verdict that
-Gemini was absent this round**. Losing Gemini's second voice occasionally is fine; a
-review still has GPT + Opus. Provoking repeated OAuth to keep Gemini is not.
+**SKIP the Gemini seat for this round**: run GPT-solo (GPT is the anchor — 铁律 holds),
+and **note in the verdict that Gemini was absent this round**. Do NOT spin up a
+clean-Opus substitute — that is ONLY for `-gpt` (GPT genuinely dead); when GPT is alive,
+GPT-solo is sufficient and a seat-swap arbitration just burns bandwidth. A flake does
+NOT advance the round counter — it is the same round, minus Gemini. Losing Gemini's
+second voice occasionally is fine; provoking repeated OAuth to keep it is not.
 
 ## How — review by reference, never inline
 
@@ -176,3 +178,16 @@ Additive findings that survive this gate are real and welcome. The gate is narro
 only fires on "add new capability", never on "this existing thing is wrong/unsafe"
 (those — the bulk of review value — pass straight through). Removing machinery is
 always fine; the gate is asymmetric by design.
+
+### Loop convergence + round accounting (SPOT for any looping gate)
+
+- **GREEN = the latest round's arbitrated findings have no BLOCKER/MAJOR.** Do NOT
+  chase findings to zero. Surviving MINORs are recorded and **carried into execution as
+  tracked cleanups**, not a barrier to GREEN. This drops the trailing pure-confirmation
+  round (`3→3→0`, `1→1→0` tails).
+- **A flake is not a round.** An agy empty-stdout retry or a GPT `token_revoked` seat
+  handling is resolved WITHIN the current round (retry same round / skip the flaked seat
+  per the degrade policy above); only a findings-producing cross-vendor pass advances the
+  round counter. Flakes must not inflate the trajectory or the escalation cap.
+- **Escalation cap.** At **8 real rounds** without GREEN, STOP and escalate to the user
+  for an architectural call — never auto-green a non-converged gate, never grind past it.
