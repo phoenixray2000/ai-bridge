@@ -244,3 +244,42 @@ This is the execution-side mirror of Layer 0: Layer 0 gates the plan before any 
 this gates the whole implementation before done. Both are whole-artifact cross-vendor
 passes; both loop-until-green. Scope: plan execution only (the managed loop) — a
 one-shot call has no whole-diff to close on.
+
+## Reality gate — the artifact vs REALITY (final, after the closing xreview)
+
+The whole review architecture — Layers 0–3, the closing xreview included — checks the
+**artifact against the spec**: it reads plan and code. It has one structural blind spot:
+it **never checks the artifact against reality**. Every mid-execution replan the reviews
+could NOT prevent shares this shape — the code was *correct against its premise*, but the
+premise diverged from what the flow assumed: a prod table was empty, the deployed dist
+was stale, the real inputs varied more than the fixtures. Synthetic fixtures pass GREEN,
+`healthz` says the process is alive, the closing xreview says the diff matches the spec —
+and the thing is still broken in production. Reading more code cannot close this; only
+real evidence can.
+
+So the managed loop has a **final, non-optional gate after the closing xreview, before
+'done'**:
+
+1. **Execution-site freshness.** Assert that what actually runs **is** the code you just
+   built — the deployed dist / emitted prompt / running binary, by mtime-later-than-
+   deploy-start or `build_commit`, **NOT** "`healthz` is 200" (process-alive ≠ new-code-
+   running). A stale-dist deploy is the failure that made a *correct* fix look ineffective
+   across days of re-diagnosis (the error just changed shape under input nondeterminism
+   and read as "fixed"). The freshness sentinel in `fast-deploy` IS this assertion — the
+   methodology obligation is to **never claim a fix verified without it**.
+2. **One live smoke against REAL data.** Run the change end-to-end **once** on real
+   production input (the real conversation / record / transcript), not a fixture, and
+   assert the observed behavior at the real execution site. This is the single check the
+   entire review architecture cannot substitute — it's the only pass that consumes reality
+   instead of a proxy for it.
+
+**'Done' is NOT claimable from green tests + green closing xreview alone** — only when the
+reality gate has passed. If deploy is the **user's** call (not run in-flow), the claim is
+downgraded honestly — *"merged & review-GREEN; NOT yet verified against reality — pending
+deploy + live smoke"*, never "done" (the honesty discipline: evidence before assertions).
+The two obligations then travel with the handoff as the remaining work; a lingering "待
+live smoke" is an OPEN gate, not a footnote.
+
+**Scope:** any plan whose output a live system consumes. A pure refactor with no runtime
+or data surface has no reality to gate against — say so and skip **explicitly** (a silent
+skip reads as "gated" when it wasn't).

@@ -65,6 +65,19 @@ Agent tool has no separate effort knob. The subagent prompt must:
   NOT a screenshot pixel-diff (brittle), NOT "the component file exists" (that's the
   假接入 proxy). The judgment-level "does it honor the demo's feel" check is xreview's
   visual-conformance dimension, not the plan's verify.
+- **Ground every REALITY PREMISE with an on-site check task.** A *reality premise* is
+  a load-bearing assumption the plan rests on that is **NOT legible in the code being
+  changed** and that a synthetic fixture passes GREEN on regardless of whether it's
+  true — e.g. "table X is populated", "the only consumer of Y is Z", "this workspace is
+  pnpm", "the build chain includes package P". These are exactly the premises that, when
+  wrong, force a mid-execution replan: reading the diff can't catch them because the diff
+  is *correct against the premise* — the premise itself is false. For each one the plan
+  MUST carry an explicit grounding step **before** the work that depends on it, whose
+  verify reads the **real authority** — query the production store read-only (assert the
+  row/table non-empty), enumerate **all** consumers (grep the whole repo, not the happy
+  path), confirm the workspace/toolchain shape — **NOT a fixture, NOT the author's
+  belief**. Cheap to check, expensive to get wrong → check it first, in code, against
+  reality. (Execution-side mirror: `route` "Reality gate".)
 - End the plan with a mandatory **closing gate: whole-implementation xreview** —
   after the last real task, a final cross-vendor review of the ENTIRE plan diff
   (`git diff <plan-base>..HEAD` vs the spec), loop-until-green, before done. This is
@@ -80,8 +93,10 @@ critical tasks carry the flag (→ task-level cross-vendor review); finishing/de
 tasks reserve their final "whole-repo zero-reference" check for the orchestrator;
 **the plan ends with the closing whole-implementation xreview gate**; **if a visual
 contract exists, every UI task references its load-bearing assertions and its verify
-asserts them at the DOM level**. Missing `complexity`, the closing gate, or (when a
-demo exists) the visual-contract wiring → bounce it back. The plan format contract
+asserts them at the DOM level**; **every reality premise (prod-data / environment /
+consumer-set assumption) has a grounding step that reads the real authority, placed
+before its dependent task**. Missing `complexity`, the closing gate, the visual-contract
+wiring (when a demo exists), or a reality-premise grounding step → bounce it back. The plan format contract
 becomes a gate, not something the author has to remember. This is a *mechanical* check — it does
 not read the plan's design judgment. That's Phase 4.
 
@@ -178,6 +193,14 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
      assert them at the DOM level against rendered output (not pixel-diff, not "file
      exists")? A UI plan that will visibly drift from the demo must be caught HERE,
      before code — not after the page ships looking wrong.
+  8. **Reality-premise grounding** — does every load-bearing premise about production
+     data, environment/toolchain, or the consumer set carry an on-site grounding step
+     (reads the real authority — prod store / repo-wide consumer enumeration / workspace
+     shape — NOT a fixture) BEFORE the work that depends on it? These are the premises
+     reading the code cannot falsify, so a synthetic-fixture test goes GREEN whether they
+     hold or not; the review's job is to demand each is grounded against reality in-plan,
+     so a false premise surfaces at plan/execution cost, not as a post-deploy replan. An
+     ungrounded prod-data / env / consumer-set assumption is a finding.
 - **Evidence + arbitration** — each vendor's findings land in
   `<repo>/docs/superpowers/reviews/plan-<name>-<vendor>.md`; **you (orchestrator)
   arbitrate** into `plan-<name>-verdict.md` — never ask one vendor to merge the
