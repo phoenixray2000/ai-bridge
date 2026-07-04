@@ -386,8 +386,16 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     const args = agyArgs({ role, prompt, effort, cwd, family });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
     const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 4));
+    // Backoff BEFORE a retry: gentle on the backend (风控 hygiene) and — more to the
+    // point — an empty-stdout flake is an early failure (auth race: agy logs
+    // "not logged into Antigravity" then recovers via keyring ~0.7s later, and its
+    // answer is NOT in the conversation store, verified by probe — so there's nothing
+    // to recover locally, a re-call is the only path). The pause lets that keyring
+    // auth settle so the next attempt starts cleanly-authed and usually lands first try.
+    const backoffMs = Math.max(0, Number(process.env.AI_BRIDGE_AGY_BACKOFF_MS ?? 1200));
     let lastErr = "unknown";
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (attempt > 1 && backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
       const attemptSince = Date.now();
       const r = await run(agyBin(), args, { cwd, timeoutMs });
       const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
@@ -395,10 +403,12 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
         return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
       }
       if (r.ok) {
-        // exit 0 + empty stdout = drip discarded the answer; recover it.
+        // exit 0 + empty stdout: ONE cheap store-recovery check (probe shows it
+        // rarely has the answer — the flake is an early failure, not a discarded
+        // completion — but the single read is ~free, so try before re-calling).
         try {
           const recovered = recoverAgyAnswer({ since: attemptSince, prompt });
-          return { ok: true, commandLine, output: recovered.answer, note: `answer recovered from ${recovered.source} (agy piped-stdout bug)${tag}` };
+          return { ok: true, commandLine, output: recovered.answer, note: `answer recovered from ${recovered.source}${tag}` };
         } catch (error) {
           lastErr = `empty stdout + recovery failed: ${error?.message ?? error}`;
           continue; // retryable
