@@ -377,22 +377,31 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // result not ok → shared failure handler below
   } else {
     // gemini (agy): under piped (non-TTY) stdout, agy's drip renderer discards
-    // the answer NON-deterministically (clean exit 0, empty stdout) and it also
-    // throws a transient re-login now and then. A single call "mostly works" but
-    // flakes. A real TTY is 100% reliable but needs a PTY native dep — the no-dep
-    // STABLE method is a BOUNDED RETRY: re-run the whole attempt (spawn + empty-
-    // stdout recovery from the conversation store agy reliably persists to) until
-    // one lands. A true TIMEOUT is not retried (it would burn another print-timeout).
+    // the answer NON-deterministically (~25% of isolated calls: clean exit 0, empty
+    // stdout; the answer is NOT in the conversation store either — verified by probe,
+    // so there's nothing to recover locally, only a re-call gets it).
+    //
+    // CRITICAL — retries must stay GENTLE and DE-CLUSTERED. Each agy call is a fresh
+    // process that re-inits auth from the SHARED keyring token. At normal spacing that
+    // is a silent token load (no browser). But CLUSTERED cold-starts (rapid retries /
+    // stress) contend on auth init and provoke agy to open a full browser OAuth
+    // `prompt=consent` flow — EVEN with a valid non-expired keyring token (observed:
+    // browser.go consumerOAuth 5s after a valid keyring load). Repeated interactive
+    // OAuth is a Google account-risk-control exposure. So: FEW attempts, LONG backoff
+    // (never cluster), and on final failure DEGRADE (caller drops the Gemini seat to
+    // clean Opus, GPT anchors) — never hammer. A true TIMEOUT is not retried.
+    // The clean-context one-shot model is a VIRTUE (fresh independent review); a
+    // persistent session would auth once but POLLUTE context — rejected. The only
+    // deterministic escalation is a PTY (one-shot + fake TTY: no drip, still clean
+    // context, no cluster), gated behind a native dep — not done here.
     const args = agyArgs({ role, prompt, effort, cwd, family });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
-    const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 4));
-    // Backoff BEFORE a retry: gentle on the backend (风控 hygiene) and — more to the
-    // point — an empty-stdout flake is an early failure (auth race: agy logs
-    // "not logged into Antigravity" then recovers via keyring ~0.7s later, and its
-    // answer is NOT in the conversation store, verified by probe — so there's nothing
-    // to recover locally, a re-call is the only path). The pause lets that keyring
-    // auth settle so the next attempt starts cleanly-authed and usually lands first try.
-    const backoffMs = Math.max(0, Number(process.env.AI_BRIDGE_AGY_BACKOFF_MS ?? 1200));
+    const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 2));
+    // LONG backoff before a retry: the first process must have fully exited and
+    // released keyring/auth so the retry is a de-clustered normal-cadence call, not a
+    // contending one. 8s ≫ the ~0.7s keyring-settle window; keeps us far from the
+    // clustering that provokes browser OAuth.
+    const backoffMs = Math.max(0, Number(process.env.AI_BRIDGE_AGY_BACKOFF_MS ?? 8000));
     let lastErr = "unknown";
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1 && backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
@@ -421,7 +430,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
       // fast crash / transient re-login → retryable
     }
-    return { ok: false, commandLine, error: `agy failed after ${maxAttempts} attempt(s): ${lastErr} — inspect ${path.join(AGY_HOME, "conversations")}` };
+    return { ok: false, commandLine, degrade: true, error: `agy failed after ${maxAttempts} gentle attempt(s): ${lastErr}. DEGRADE this Gemini seat (clean Opus fills it, GPT anchors) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent). Inspect ${path.join(AGY_HOME, "conversations")}` };
   }
 
   // gpt-only from here (the gemini branch returns in all paths above).

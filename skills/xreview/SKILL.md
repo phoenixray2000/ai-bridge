@@ -51,6 +51,18 @@ If any gate's panel collapses to one external voice, **say so loudly** and never
 a single-perspective review off as cross-vendor. Dual-sign evidence relaxes to
 whatever vendors ran — but a missing GPT (without `-gpt`) is a defect, not a relaxation.
 
+### When agy (Gemini) fails — DEGRADE, never hammer
+
+agy is flaky (~25% of isolated calls return empty; `ai_exec`/`ai_review` already do a
+GENTLE bounded retry internally — 2 attempts, long backoff). If it STILL fails (result
+carries `degrade: true`), do **NOT** re-invoke agy in a loop to force a Gemini result:
+**clustered agy cold-starts provoke a full browser OAuth `prompt=consent` re-login**
+(a Google account-risk-control exposure, observed even with a valid token). Instead
+**degrade the Gemini seat**: fill it with a clean-window Opus (as under `-gpt`), keep
+GPT as the anchor (铁律 still holds — GPT is present), and **note in the verdict that
+Gemini was absent this round**. Losing Gemini's second voice occasionally is fine; a
+review still has GPT + Opus. Provoking repeated OAuth to keep Gemini is not.
+
 ## How — review by reference, never inline
 
 For each panel vendor, MCP `ai_review` with:
