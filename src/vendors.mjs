@@ -351,7 +351,6 @@ export function recoverAgyAnswer({ since, prompt }) {
 // High-level vendor calls
 // ---------------------------------------------------------------------------
 export async function callVendor({ vendor, role, prompt, effort, cwd, family, timeoutMs, resume }) {
-  const started = Date.now();
   let result;
   let commandLine;
   if (vendor === "gpt") {
@@ -377,34 +376,45 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     }
     // result not ok → shared failure handler below
   } else {
+    // gemini (agy): under piped (non-TTY) stdout, agy's drip renderer discards
+    // the answer NON-deterministically (clean exit 0, empty stdout) and it also
+    // throws a transient re-login now and then. A single call "mostly works" but
+    // flakes. A real TTY is 100% reliable but needs a PTY native dep — the no-dep
+    // STABLE method is a BOUNDED RETRY: re-run the whole attempt (spawn + empty-
+    // stdout recovery from the conversation store agy reliably persists to) until
+    // one lands. A true TIMEOUT is not retried (it would burn another print-timeout).
     const args = agyArgs({ role, prompt, effort, cwd, family });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
-    result = await run(agyBin(), args, { cwd, timeoutMs });
+    const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 4));
+    let lastErr = "unknown";
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const attemptSince = Date.now();
+      const r = await run(agyBin(), args, { cwd, timeoutMs });
+      const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
+      if (r.ok && r.stdout !== "") {
+        return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
+      }
+      if (r.ok) {
+        // exit 0 + empty stdout = drip discarded the answer; recover it.
+        try {
+          const recovered = recoverAgyAnswer({ since: attemptSince, prompt });
+          return { ok: true, commandLine, output: recovered.answer, note: `answer recovered from ${recovered.source} (agy piped-stdout bug)${tag}` };
+        } catch (error) {
+          lastErr = `empty stdout + recovery failed: ${error?.message ?? error}`;
+          continue; // retryable
+        }
+      }
+      if (r.timedOut) {
+        lastErr = `timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`;
+        break; // do NOT retry a full timeout
+      }
+      lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
+      // fast crash / transient re-login → retryable
+    }
+    return { ok: false, commandLine, error: `agy failed after ${maxAttempts} attempt(s): ${lastErr} — inspect ${path.join(AGY_HOME, "conversations")}` };
   }
 
-  // agy 1.0.x with piped stdout: answer is rendered to a TTY drip and
-  // discarded — recover it from the conversation store (see recovery section).
-  if (vendor === "gemini" && result.ok && result.stdout === "") {
-    try {
-      const recovered = recoverAgyAnswer({ since: started, prompt });
-      return {
-        ok: true,
-        commandLine,
-        output: recovered.answer,
-        note: `answer recovered from ${recovered.source} (agy piped-stdout bug)`,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        commandLine,
-        error:
-          "agy exited 0 with empty stdout and recovery failed: " +
-          (error?.message ?? error) +
-          ` — inspect ${path.join(AGY_HOME, "brain")} and ${path.join(AGY_HOME, "conversations")}`,
-        stderr: result.stderr,
-      };
-    }
-  }
+  // gpt-only from here (the gemini branch returns in all paths above).
   if (!result.ok) {
     return {
       ok: false,
