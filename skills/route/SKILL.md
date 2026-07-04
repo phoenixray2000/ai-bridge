@@ -19,7 +19,9 @@ Two orthogonal axes, not one list of types:
 - **critical** (optional flag) — asymmetric cost if wrong, in either sense:
   *irreversible* (cutover, delete, storage write-migration) OR *foundational*
   (high blast radius — later tasks depend on it: an interface, a shared
-  abstraction). Triggers extra review, NOT a different executor (Step 6).
+  abstraction). It raises the executor's TIER (be more careful) and signals the
+  planner to **isolate it into its own phase** (Step 6). It does NOT trigger a
+  task-level cross-vendor review anymore — that was removed as too heavy.
 
 | Class | Signal | Leg |
 |---|---|---|
@@ -140,28 +142,40 @@ the plan, see critical).
 ## Step 6 — critical tasks (orthogonal to complexity)
 
 A task flagged **critical** (irreversible OR foundational, see Step 1) keeps its
-complexity-derived executor, but additionally:
-- gets a **task-level cross-vendor review** (`xreview`) — not just the continuous
-  layer. This is where early cross-vendor coverage goes: the high-blast-radius and
-  irreversible tasks, caught before later work compounds on them;
-- if it's an irreversible-cutover pre-flight audit, run it at **Opus max** (the one
-  preemptive max), written into the plan step.
+complexity-derived executor and does two things — **neither is a task-level
+cross-vendor review** (that layer was removed as too heavy):
+- **raises the tier** and tells the executor to be more careful;
+- signals the planner to **isolate it into its OWN phase** (`smart-plan` enforces this;
+  Layer 0 checks it). Reason: a foundational task's defect can be *type-correct but
+  semantically wrong* (field meaning / nullability / ordering) — the compiler won't
+  catch it, and a later consuming task would compound on it. Isolating it into its own
+  phase makes the **phase-boundary** cross-vendor review fire on it **before any
+  consumer is wired** — early coverage without a per-task review round.
+- if it's an irreversible-cutover, the phase-boundary review of its (own) phase runs at
+  **GPT xhigh**, and an **Opus-max pre-flight audit** (Claude pool, the one preemptive
+  max — NOT cross-vendor, so unaffected by the removal) is written into the plan step.
 
-Critical is a flag, not a tier — a task can be `low` complexity AND critical (e.g.
-a one-line but irreversible deletion). Non-critical tasks rely on the continuous
-layer (orchestrator two-stage + verify) per task, and the **phase-boundary**
-cross-vendor review as the catch-all — so keep phases small enough that the
-phase-boundary `xreview` fires while the work is still fresh.
+Critical is a flag, not a tier — a task can be `low` complexity AND critical (e.g. a
+one-line but irreversible deletion). Everything else relies on the continuous layer
+(TDD + verify + orchestrator two-stage) per task, and the **phase-boundary** cross-
+vendor review as the catch-all — so keep phases small so that review fires while the
+work is still fresh.
 
-The review architecture has **four layers**, earliest first:
-- **Layer 0 — plan-level cross-vendor review** (`smart-plan` Phase 4): the plan
-  itself is reviewed cross-vendor before any task dispatches. Densest-judgment
-  artifact, cheapest fix, fires once per plan — design bugs (decomposition, missing
-  edge cases, dishonest route fields, wrong interface) caught before any code exists.
-- **Layer 1 — continuous** (orchestrator two-stage + verify/redlines/typecheck):
-  per task, every task, free.
-- **Layer 2 — task-level cross-vendor**: critical tasks only (this step).
-- **Layer 3 — phase-boundary cross-vendor**: full-diff catch-all for everything else.
+The review architecture has **three layers + a closing gate**, earliest first (the old
+per-critical-task cross-vendor layer was removed — TDD covers per-task correctness, and
+integration/design defects only surface at wiring = phase boundary, not inside a task):
+- **Layer 0 — plan-level cross-vendor review** (`smart-plan` Phase 4): the plan itself
+  is reviewed cross-vendor before any task dispatches. Densest-judgment artifact,
+  cheapest fix — design bugs caught before any code exists. Highest-value layer.
+- **Layer 1 — continuous, per task** (TDD: failing test → implement → pass; + verify /
+  redlines / typecheck; + orchestrator two-stage). Free, every task. The compiler +
+  the next task's typecheck catch type-level interface breaks for free.
+- **Layer 2 — phase-boundary cross-vendor**: full phase diff, every phase. This is where
+  execution-stage cross-vendor coverage lives — integration/contract/wiring defects
+  surface here. Keep phases small so it fires often; isolate critical tasks into their
+  own phase so it fires on them early.
+- **Closing gate — whole-implementation cross-vendor** (Layer 3-final, below): the whole
+  plan diff once, before done.
 
 ## Step 7 — report the routing decision
 

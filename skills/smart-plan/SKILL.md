@@ -56,8 +56,17 @@ Agent tool has no separate effort knob. The subagent prompt must:
   `critical`. NOT a hardcoded model name — the model is resolved at execution time
   by `route` × current scenario × complexity. The one explicit exception: an
   irreversible-cutover pre-flight audit may pin `Opus max` in the step.
-- Keep **phases small** — the phase-boundary cross-vendor review is the quality
-  catch-all for non-critical tasks; small phases make it fire while work is fresh.
+- **A `critical` task MUST be isolated into its OWN phase.** There is no per-critical-
+  task cross-vendor review anymore (removed as too heavy — TDD covers per-task
+  correctness). A critical task's early cross-vendor coverage now comes from the
+  **phase-boundary review of its own phase**, which fires **before any consuming task is
+  wired** — catching the type-correct-but-semantically-wrong interface defect the
+  compiler can't. So: one critical task = one phase. Do NOT bury a foundational/
+  irreversible task inside a multi-task phase (consumers would compound on it before the
+  boundary review sees it).
+- Keep **phases small** — the phase-boundary cross-vendor review is the ONLY
+  execution-stage cross-vendor layer now, so small phases are load-bearing: they make it
+  fire while work is fresh and keep mid-phase rework bounded.
 - **When a visual contract exists** (Phase 1): every UI task must carry the relevant
   **load-bearing visual assertions as acceptance criteria**, and its **verify script
   must assert them at the DOM/structural level against the RENDERED output** (parse the
@@ -89,14 +98,16 @@ Agent tool has no separate effort knob. The subagent prompt must:
 ## Phase 3 — exit check (orchestrator, mechanical gate)
 
 Accept the subagent's plan and verify: every task has a `complexity` field;
-critical tasks carry the flag (→ task-level cross-vendor review); finishing/deletion
-tasks reserve their final "whole-repo zero-reference" check for the orchestrator;
-**the plan ends with the closing whole-implementation xreview gate**; **if a visual
-contract exists, every UI task references its load-bearing assertions and its verify
-asserts them at the DOM level**; **every reality premise (prod-data / environment /
-consumer-set assumption) has a grounding step that reads the real authority, placed
-before its dependent task**. Missing `complexity`, the closing gate, the visual-contract
-wiring (when a demo exists), or a reality-premise grounding step → bounce it back. The plan format contract
+**every `critical` task is isolated into its own phase** (no per-critical task-level
+review anymore — its early coverage comes from its own phase's boundary review);
+finishing/deletion tasks reserve their final "whole-repo zero-reference" check for the
+orchestrator; **the plan ends with the closing whole-implementation xreview gate**; **if
+a visual contract exists, every UI task references its load-bearing assertions and its
+verify asserts them at the DOM level**; **every reality premise (prod-data / environment
+/ consumer-set assumption) has a grounding step that reads the real authority, placed
+before its dependent task**. Missing `complexity`, a `critical` task buried in a
+multi-task phase, the closing gate, the visual-contract wiring (when a demo exists), or a
+reality-premise grounding step → bounce it back. The plan format contract
 becomes a gate, not something the author has to remember. This is a *mechanical* check — it does
 not read the plan's design judgment. That's Phase 4.
 
@@ -179,12 +190,19 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
      "complete" means covers the spec's goals, NOT "everything one could imagine
      building". A gap the spec asked for is a finding; a capability beyond the spec is
      not (see the additive-finding gate below).
-  3. **Route-field honesty (meta-review)** — is each `complexity` rated truthfully?
-     are `critical` flags right (no irreversible / foundational task left unflagged)?
-     This is the one place the routing *inputs* themselves get audited.
+  3. **Route-field honesty + critical phase-isolation (meta-review)** — is each
+     `complexity` rated truthfully? are `critical` flags right (no irreversible /
+     foundational task left unflagged)? **AND is every `critical` task isolated into its
+     own phase?** Since the per-critical task-level review was removed, phase-isolation
+     is the ONLY mechanism giving a critical task early cross-vendor coverage (its own
+     phase's boundary review, before consumers wire in). A `critical` task buried in a
+     multi-task phase is a BLOCKER-class finding — its semantically-wrong-but-type-correct
+     interface defect would compound on consumers before any review sees it.
   4. **Interface / contract soundness** — for foundational tasks, is the interface
      they establish actually right? Everything downstream compounds on it; this is
-     the single highest-leverage thing to get correct.
+     the single highest-leverage thing to get correct. (This is exactly the defect class
+     the compiler can't catch and that phase-isolation of the critical task exists to
+     surface early — so dimension 3's isolation check and this one reinforce each other.)
   5. **Verify-contract adequacy** — does every task carry a real acceptance contract
      (verify + spec check)? A task with no verify can't run the managed loop.
   6. **Spec alignment** — does the plan implement the spec, or did the planner drift?
