@@ -54,8 +54,11 @@ whatever vendors ran — but a missing GPT (without `-gpt`) is a defect, not a r
 ### When agy (Gemini) fails — DEGRADE, never hammer
 
 agy is flaky (~25% of isolated calls return empty; `ai_exec`/`ai_review` already do a
-GENTLE bounded retry internally — 2 attempts, long backoff). If it STILL fails (result
-carries `degrade: true`), do **NOT** re-invoke agy in a loop to force a Gemini result:
+GENTLE bounded retry internally — 2 attempts, 8s de-clustered backoff). **Keep that one
+retry — it recovers most flakes** (the 8s gap keeps it de-clustered, so it does NOT
+provoke OAuth; only *clustered* rapid restarts do). ONLY if it STILL fails (result
+carries `degrade: true`, i.e. the one retry is exhausted) do you skip Gemini — do
+**NOT** re-invoke agy in a loop on top of the internal retry to force a Gemini result:
 **clustered agy cold-starts provoke a full browser OAuth `prompt=consent` re-login**
 (a Google account-risk-control exposure, observed even with a valid token). Instead
 **SKIP the Gemini seat for this round**: run GPT-solo (GPT is the anchor — 铁律 holds),

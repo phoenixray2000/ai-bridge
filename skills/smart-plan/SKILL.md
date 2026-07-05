@@ -162,11 +162,14 @@ After the mechanical gate passes, run a cross-vendor review **of the plan itself
     = GPT solo**. GPT-solo is NOT the forbidden Gemini-solo — GPT (the gold standard) is
     present, and GPT-external + the orchestrator two-stage keep cross-vendor perspective;
     full independence is preserved at the two heaviest gates (R1 + endgame), which is enough.
-  - **agy flake → SKIP Gemini this round** (GPT anchors, note Gemini absent) — do NOT
-    spin up the clean-Opus substitute (that is only for `-gpt`, GPT genuinely dead) and
-    do NOT start a seat-swap arbitration to force a Gemini vote. Clustered agy restarts
-    provoke a browser OAuth re-consent (see xreview degrade policy); a Gemini flake on
-    R1 / closing gate simply runs that round GPT-solo.
+  - **agy flake → ONE internal retry (kept), then SKIP Gemini this round.** `ai_review`
+    already does one gentle retry internally (2 attempts, 8s de-clustered backoff — it
+    recovers most flakes; the 8s gap keeps it far from the clustering that provokes a
+    browser OAuth re-consent). ONLY if that retry also fails (`degrade: true`) do you skip
+    Gemini for the round: GPT anchors, note Gemini absent. Do NOT add MORE agy loops on
+    top of the internal retry, do NOT spin up the clean-Opus substitute (that is only for
+    `-gpt`, GPT genuinely dead), do NOT start a seat-swap arbitration. A Gemini flake on
+    R1 / closing gate that survives its one retry simply runs that round GPT-solo.
 - **By reference, never inline** — MCP `ai_review` with `cwd: <repo>`, prompt gives
   the **spec path + plan path** and tells each reviewer to read both from disk and
   critique the plan against the spec. Same anti-truncation discipline as code review.
