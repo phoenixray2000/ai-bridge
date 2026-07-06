@@ -6,9 +6,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { callVendor, writeEvidence, embedFiles, assertSafeExecCwd } from "./vendors.mjs";
 
-const server = new McpServer({ name: "ai-bridge", version: "0.1.0" });
+// Version derives from package.json (single source — release bumps land here too).
+const pkg = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"));
+const server = new McpServer({ name: "ai-bridge", version: pkg.version });
 
 const vendorSchema = z.enum(["gpt", "gemini"]);
 const effortSchema = z.enum(["low", "medium", "high", "xhigh"]);
@@ -54,8 +59,10 @@ server.tool(
 
 server.tool(
   "ai_exec",
-  "Execute a self-contained implementation task via GPT (codex, workspace-write " +
-    "sandbox) or Gemini (agy). The agent gets write access to cwd; cwd must be a " +
+  "Execute a self-contained implementation task via GPT (codex, danger-full-access " +
+    "sandbox — the only codex mode whose tool launcher works on this Windows setup; " +
+    "the clean-git-tree guard is the safety net) or Gemini (agy). The agent gets " +
+    "write access to cwd; cwd must be a " +
     "git repo with a clean working tree (override with allow_dirty). Reference " +
     "plan files by path in the prompt — the agent reads them from disk. Returns " +
     "a session id; pass it as `resume` to continue the same vendor session with " +

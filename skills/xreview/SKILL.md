@@ -5,15 +5,15 @@ description: Cross-vendor adversarial review of a diff. Use at phase boundaries 
 
 # xreview — cross-vendor review
 
-Extra review's value is **perspective difference**, not repetition. The
-orchestrator's two-stage review (spec-conformance + code-quality) is always in
-play as the continuous layer; xreview adds outside vendors whose blind spots
-don't overlap.
+Review value is **perspective difference**, not repetition. The orchestrator's
+two-stage review is always in play as the continuous layer; xreview adds outside
+vendors whose blind spots don't overlap.
+*Rationale/history: `docs/model-selection-methodology.md`. Skills are the
+behavioral SPOT; on conflict, skills win.*
 
-## Panel selection — from `~/.claude/ai-model`
+## Panel — from `~/.claude/ai-model`
 
-The panel is not a separate setting; take it from the routing knob's per-scenario
-panel (see the `route` skill's canonical table):
+Per-scenario panel (canonical table in `route`):
 
 | scenario | panel | with `-gpt` (GPT dead) |
 |---|---|---|
@@ -22,94 +22,60 @@ panel (see the `route` skill's canonical table):
 | gemini | GPT high + Opus medium | Opus only — thin, **say so** |
 | opus | GPT high + Gemini | Gemini + Opus |
 
-**GPT stays in the panel whenever it has quota** — gold-standard reviewer, kept
-even in the gpt scenario; Gemini + the orchestrator two-stage supply cross-vendor
-coverage and GPT high is added strength (Opus backfill does NOT match it). The
-`-gpt` flag swaps GPT's slot for a clean-window **Opus 4.8 medium** subagent
-(fresh `model: opus`, own evidence file `<label>-opus.md` — distinct from your
-context-saturated orchestrator review). The orchestrator two-stage review is
-always on top.
+`-gpt` swaps GPT's slot for a **clean-window Opus 4.8 medium** subagent (fresh
+`model: opus`, own evidence file `<label>-opus.md`).
 
 ### 铁律 — GPT is MANDATORY in any gating review while it has quota
 
-A gating review (phase boundary, plan review / Layer 0, critical task, closing gate)
-that runs **must include GPT** unless `~/.claude/ai-model` carries `-gpt` (GPT quota
-dead). **Single-vendor Gemini is FORBIDDEN as a gate.** Gemini is the *second voice
-alongside* GPT (perspective diff), never a substitute for it — a Gemini-only gate
-isn't a "lighter" review, it's a broken one that dropped the gold standard.
+A gating review (Layer 0 / phase boundary / closing gate) **must include GPT**
+unless the knob carries `-gpt`. **Single-vendor Gemini gates are FORBIDDEN** —
+Gemini is the second voice *alongside* GPT, never a substitute. Lightness =
+**frequency** (fewer/smaller phases), never "swap GPT for cheaper Gemini-only";
+if tempted to skip GPT to save cost, don't run the gate at all (trust verify).
+A single-vendor argument (`gpt`/`gemini`) is for ad-hoc one-shot opinions ONLY,
+never a managed gate. If a panel collapses to one external voice, **say so
+loudly**. Missing GPT without `-gpt` is a defect, not a relaxation (the phase
+gate `check-review-evidence.mjs` fails loud on it unless `--gpt-dead`).
 
-The one legitimate way to make review lighter is **frequency** — run a gate on fewer
-tasks (only critical tasks get task-level review; non-critical rely on the continuous
-layer + phase boundary). Lightness is NEVER "swap GPT for cheaper Gemini-only". If
-you're tempted to skip GPT to save cost, the correct move is to not run that gate at
-all (trust verify), not to run a degraded one. If GPT genuinely has no quota, set
-`-gpt` (which swaps to Opus, NOT to Gemini-only) and say so.
+### agy (Gemini) failure — one internal retry, then SKIP, never hammer
 
-An explicit single-vendor argument (`gpt`/`gemini`) is ONLY for an **ad-hoc one-shot
-opinion** (`/aibridge:gemini` for a quick second look) — NEVER for a managed gate.
-If any gate's panel collapses to one external voice, **say so loudly** and never pass
-a single-perspective review off as cross-vendor. Dual-sign evidence relaxes to
-whatever vendors ran — but a missing GPT (without `-gpt`) is a defect, not a relaxation.
-
-### When agy (Gemini) fails — DEGRADE, never hammer
-
-agy is flaky (~25% of isolated calls return empty; `ai_exec`/`ai_review` already do a
-GENTLE bounded retry internally — 2 attempts, 8s de-clustered backoff). **Keep that one
-retry — it recovers most flakes** (the 8s gap keeps it de-clustered, so it does NOT
-provoke OAuth; only *clustered* rapid restarts do). ONLY if it STILL fails (result
-carries `degrade: true`, i.e. the one retry is exhausted) do you skip Gemini — do
-**NOT** re-invoke agy in a loop on top of the internal retry to force a Gemini result:
-**clustered agy cold-starts provoke a full browser OAuth `prompt=consent` re-login**
-(a Google account-risk-control exposure, observed even with a valid token). Instead
-**SKIP the Gemini seat for this round**: run GPT-solo (GPT is the anchor — 铁律 holds),
-and **note in the verdict that Gemini was absent this round**. Do NOT spin up a
-clean-Opus substitute — that is ONLY for `-gpt` (GPT genuinely dead); when GPT is alive,
-GPT-solo is sufficient and a seat-swap arbitration just burns bandwidth. A flake does
-NOT advance the round counter — it is the same round, minus Gemini. Losing Gemini's
-second voice occasionally is fine; provoking repeated OAuth to keep it is not.
+`ai_review` already retries agy once internally (2 attempts, 8s de-clustered
+backoff — recovers most flakes without provoking OAuth; only *clustered* rapid
+restarts do). If it still fails (`degrade: true`): **skip the Gemini seat this
+round** — GPT-solo (铁律 holds), note Gemini absent in the verdict. Do NOT loop
+agy on top of the internal retry (clustered cold-starts provoke a browser OAuth
+re-consent — account-risk exposure), do NOT spin up a clean-Opus substitute
+(that is only for `-gpt`). A flake does not advance the round counter.
 
 ## How — review by reference, never inline
 
-For each panel vendor, MCP `ai_review` with:
-- `cwd: <repo>` — the reviewer reads files and runs git **itself** from here.
-  **Do NOT paste code/diffs into the prompt** — inlining hits the Windows argv
-  limit (truncation) and forces lossy trimming. Reference instead.
-- `prompt`: instructions + **what to review by reference** — the diff range
-  (`git diff <base>..<head>`), the changed file paths, and the spec path. Tell
-  the reviewer to read those and review against the spec. It has read-only
-  access (codex danger-full-access + git net; agy `--sandbox`).
-- `effort` (default high; xhigh for cutover diffs);
-- `evidence_path: <repo>/docs/superpowers/reviews/<label>-<vendor>.md` (dual-sign
-  = both vendor files must exist for the gate).
+Per panel vendor, MCP `ai_review` with:
+- `cwd: <repo>` — the reviewer reads files / runs git itself. **Never paste
+  code/diffs into the prompt** (Windows argv limit truncates; lossy trimming).
+- `prompt`: instructions + references — diff range (`git diff <base>..<head>`),
+  changed paths, spec path.
+- `effort`: default high; **xhigh for cutover diffs**.
+- `evidence_path`: `<repo>/docs/superpowers/reviews/<label>-<vendor>.md`.
 
-Only inline (omit `cwd`) for a standalone snippet that isn't in any repo.
-
-Run the panel vendors concurrently (independent MCP calls in one turn).
+Inline (omit `cwd`) only for a repo-less snippet. Run panel vendors
+concurrently.
 
 ### Visual conformance — when a visual contract exists
 
-If the change ships UI and the spec pins a **visual contract** (a demo + load-bearing
-visual assertions, see `smart-plan` Phase 1), the review carries an extra dimension:
-**does the rendered output honor the demo's load-bearing decisions?** Two levels, by
-design (no pixel-diff — brittle, high-noise):
-- The **DOM/structural assertions** are the plan's verify job (control exists, section
-  order, each state's distinct treatment) — deterministic floor.
-- xreview adds the **judgment** the floor can't hold: give the reviewer the demo path +
-  the changed UI files + the visual assertions, and ask whether the implementation
-  honors the demo's hierarchy / grouping / affordances / state treatments. Findings
-  cite the violated **load-bearing** assertion — incidental demo details (placeholder
-  text, default colors) are NOT contract and must not be flagged (additive-finding gate
-  applies: don't gold-plate against the demo's incidental pixels).
-This is the visual analog of catching 假接入: the gate must check the real rendered
-outcome against the design intent, not a proxy ("the component file exists").
+If the change ships UI and the spec pins a visual contract (`smart-plan` Phase
+1), add the dimension: **does the rendered output honor the demo's load-bearing
+decisions?** Two levels, no pixel-diff: DOM/structural assertions are the plan's
+verify job (deterministic floor); xreview adds the judgment layer — give the
+reviewer the demo path + changed UI files + the assertions, ask whether
+hierarchy / grouping / affordances / state treatments are honored. Findings must
+cite a **load-bearing** assertion; incidental demo details (placeholder text,
+default colors) are not contract — don't flag them.
 
-## Output contract — append to EVERY `ai_review` prompt (canonical, SPOT)
+## Output contract — append VERBATIM to EVERY `ai_review` prompt (SPOT)
 
-Reviewers (codex/agy) default to chatty, interactive behavior — they ask "shall I
-fix this?", request confirmation, or start editing. That breaks the model: the
-reviewer's job is to *find*, the orchestrator's job is to *dispatch fixes*. It also
-makes evidence files un-gateable. So every `ai_review` prompt — here AND in
-`smart-plan` Phase 4 (plan review) — must end with this block, reproduced verbatim:
+Reviewers default to chatty/interactive behavior, which breaks find-vs-dispatch
+and makes evidence un-gateable. Every `ai_review` prompt (here AND `smart-plan`
+Phase 4) ends with:
 
 ```
 --- OUTPUT CONTRACT (obey exactly) ---
@@ -130,67 +96,47 @@ Output ONLY these two things, nothing else:
 Nothing may follow the VERDICT line.
 ```
 
-Severity → verdict is mechanical: any BLOCKER/MAJOR ⇒ `NEEDS-FIX`, else `GREEN`.
-The last-line `VERDICT:` token is what makes the evidence file machine-checkable —
-the phase gate `check-review-evidence.mjs --verdict-lines` asserts each vendor file
-ends with one and fails loudly otherwise. A review whose evidence file has no
-terminal `VERDICT:` line is malformed; re-run it, don't hand-summarize. The
-orchestrator still arbitrates findings (below) — the reviewer's `VERDICT` is its own
-opinion, NOT the final disposition (the gate reports the vendor verdicts; the
-`<label>-verdict.md` arbitration record is where GREEN/NEEDS-FIX is *decided*).
+Severity → verdict is mechanical (any BLOCKER/MAJOR ⇒ NEEDS-FIX). The terminal
+`VERDICT:` line makes evidence machine-checkable —
+`check-review-evidence.mjs --verdict-lines` asserts it per vendor file. A file
+without it is malformed: re-run, don't hand-summarize. The reviewer's VERDICT is
+its opinion; the `<label>-verdict.md` arbitration decides.
 
 ## Arbitration — yours, never the vendors'
 
-Do NOT ask one vendor to merge the other's findings — merging IS arbitration,
-and arbitration is the author side's job (Claude pool). After both return:
-
+Never ask one vendor to merge the other's findings — merging IS arbitration,
+and that's the author side's (Claude pool) job:
 1. **Both-flagged** → high confidence, prioritize.
-2. **Single-flagged** → normal; this is exactly where perspective difference
-   pays — judge each true/false.
-3. **Conflicting verdicts** → on a P0-boundary conflict, take the disputed point
-   itself to max; arbitrate only the dispute, don't re-review the whole diff.
+2. **Single-flagged** → judge each true/false (this is where perspective pays).
+3. **Conflicting on a P0 boundary** → take the disputed point itself to max;
+   arbitrate only the dispute.
 
-Write the arbitration to `<repo>/docs/superpowers/reviews/<label>-verdict.md`:
-per finding — source / accepted-or-rejected / reason / dispatch target. The
-audit chain is complete: two raw opinions + one disposition record. Confirmed
-fixes dispatch per the current scenario (low-complexity → executor, subtle →
-orchestrator direct); false positives are rejected with a written reason (never
-accept a cross-vendor finding wholesale — they don't know the repo's conventions).
+Write `<repo>/docs/superpowers/reviews/<label>-verdict.md`: per finding —
+source / accepted-or-rejected / reason / dispatch target. Confirmed fixes dispatch per scenario (low-complexity
+→ executor, subtle → orchestrator direct); false positives rejected with a
+written reason — never accept wholesale.
 
 ### Ground every ADDITIVE finding before accepting it
 
-Adversarial review is biased toward *addition* — a reviewer scores by finding more
-to do. Most of that is gold: real bugs, fail-loud holes, grounding errors (a plan
-referencing code that doesn't exist). Keep all of it. But a finding that proposes
-**building something new** ("you should ALSO handle X", "add a Y block/path/layer")
-gets one extra gate before it enters the artifact:
+Findings that flag existing defects pass straight through — the gate fires only
+on **"build something new"** proposals ("also handle X", "add a Y layer"):
+- **Foreclosed by an existing contract?** Check spec 非目标 + actual source; if
+  already excluded / premise already false → **reject**, cite the line. Never
+  let a later round harden it. (This is THE failure mode that turns healthy
+  multi-round review into churn.)
+- **Rests on an unverified code belief?** Ground against source before accepting.
+- **A genuine spec gap?** Then it's a **spec change** — re-open the spec; don't
+  improvise machinery inside the review loop.
 
-- **Is it foreclosed by an existing contract?** Check the spec's non-goals (§非目标)
-  and the actual source. If the spec already excluded it, or source already proves
-  the premise false → **reject the finding**, cite the spec section / source line.
-  Do NOT build it, do NOT let a later round harden it. (This is the one failure mode
-  that turns a healthy multi-round review into churn: a reviewer proposed work the
-  contract had already answered, and nobody checked the contract for two rounds.)
-- **Does it rest on a code belief not yet verified?** Then ground it against source
-  *before* accepting — confirm the premise, don't build on the hypothesis.
-- **Is it a genuine spec gap** (the spec is wrong/incomplete, only visible now)? Then
-  it is a **spec change**, not a plan patch — route it back to clarify (re-open the
-  spec), don't improvise new machinery inside the review loop.
+Removing machinery is always fine; the gate is asymmetric by design.
 
-Additive findings that survive this gate are real and welcome. The gate is narrow: it
-only fires on "add new capability", never on "this existing thing is wrong/unsafe"
-(those — the bulk of review value — pass straight through). Removing machinery is
-always fine; the gate is asymmetric by design.
+### Loop convergence + round accounting (SPOT for every looping gate)
 
-### Loop convergence + round accounting (SPOT for any looping gate)
-
-- **GREEN = the latest round's arbitrated findings have no BLOCKER/MAJOR.** Do NOT
-  chase findings to zero. Surviving MINORs are recorded and **carried into execution as
-  tracked cleanups**, not a barrier to GREEN. This drops the trailing pure-confirmation
-  round (`3→3→0`, `1→1→0` tails).
-- **A flake is not a round.** An agy empty-stdout retry or a GPT `token_revoked` seat
-  handling is resolved WITHIN the current round (retry same round / skip the flaked seat
-  per the degrade policy above); only a findings-producing cross-vendor pass advances the
-  round counter. Flakes must not inflate the trajectory or the escalation cap.
-- **Escalation cap.** At **8 real rounds** without GREEN, STOP and escalate to the user
-  for an architectural call — never auto-green a non-converged gate, never grind past it.
+- **GREEN = latest round's arbitrated findings have no BLOCKER/MAJOR.** Don't
+  chase zero — surviving MINORs carry into execution as tracked cleanups (drops
+  the trailing pure-confirmation round).
+- **A flake is not a round.** agy empty-stdout / GPT token_revoked are handled
+  WITHIN the round (retry / skip seat per the degrade policy); only a
+  findings-producing pass advances the counter.
+- **Escalation cap: 8 real rounds without GREEN → STOP, escalate to the user**
+  (continue / restructure spec / abort). Never auto-green, never grind past.

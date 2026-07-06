@@ -11,7 +11,10 @@ deliberately *not* the managed loop — one question, one answer, done.
 ## How
 
 - Pure question / generation (no file writes) → MCP `ai_review` with
-  `vendor: "gpt"` (read-only sandbox), the full material inline in the prompt.
+  `vendor: "gpt"` (read-only *intent*; codex runs danger-full-access — the only
+  working mode on Windows — with git as the safety net). Repo material goes **by
+  reference**: pass `cwd` + paths, never inline files (argv truncation); inline
+  only a repo-less snippet.
 - Needs to write files → MCP `ai_exec` with `vendor: "gpt"`, `cwd` set, and the
   dirty-tree guard applies (commit first or pass `allow_dirty`).
 

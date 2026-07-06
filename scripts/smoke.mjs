@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codexArgs, agyArgs, geminiModel, callVendor, parseCodexJson } from "../src/vendors.mjs";
+import { codexArgs, agyArgs, geminiModel, callVendor, parseCodexJson, _setRunImplForTests } from "../src/vendors.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const live = process.argv.includes("--live");
@@ -54,6 +54,63 @@ assert.equal(digest[digest.indexOf("--model") + 1], "Gemini 3.5 Flash (Medium)")
 
 assert.equal(geminiModel("pro", "medium"), "Gemini 3.1 Pro (High)"); // pro has no Medium tier
 console.log("ok arg builders");
+
+// --- agy retry/degrade policy (offline — live agy stress is banned) ----------
+// Fake runner simulates the observed failure modes; recovery is exercised for
+// real (no fresh conversation in the store during the test → it throws → retry).
+{
+  // Pin the policy knobs (a user env could change attempt counts) and stub the
+  // conversation-store recovery (never touch the real AGY_HOME during tests —
+  // a concurrent real agy conversation would make recovery "succeed" flakily).
+  const savedEnv = { A: process.env.AI_BRIDGE_AGY_ATTEMPTS, B: process.env.AI_BRIDGE_AGY_BACKOFF_MS };
+  process.env.AI_BRIDGE_AGY_ATTEMPTS = "2";
+  process.env.AI_BRIDGE_AGY_BACKOFF_MS = "0"; // keep the test fast
+  const recoveryFails = () => { throw new Error("no conversation (test stub)"); };
+  const base = { vendor: "gemini", role: "review", prompt: "policy-test", effort: "high", timeoutMs: 1000 };
+  const seq = (results) => {
+    let i = 0;
+    _setRunImplForTests(async () => results[Math.min(i++, results.length - 1)], recoveryFails);
+    return () => i;
+  };
+  const OK = { ok: true, exitCode: 0, stdout: "ANSWER", stderr: "" };
+  const EMPTY = { ok: true, exitCode: 0, stdout: "", stderr: "" };
+  const TIMEOUT = { ok: false, exitCode: null, stdout: "", stderr: "", timedOut: true };
+  const CRASH = { ok: false, exitCode: 1, stdout: "", stderr: "boom" };
+
+  // clean first-attempt success — no retry, no note
+  let calls = seq([OK]);
+  let r = await callVendor(base);
+  assert.ok(r.ok && r.output === "ANSWER" && !r.note && calls() === 1);
+
+  // empty stdout -> recovery fails (no fresh conversation) -> ONE retry -> success
+  calls = seq([EMPTY, OK]);
+  r = await callVendor(base);
+  assert.ok(r.ok && r.output === "ANSWER" && /retry/.test(r.note ?? ""), `retry note missing: ${JSON.stringify(r)}`);
+  assert.equal(calls(), 2);
+
+  // both attempts empty -> degrade:true; error instructs SKIP (never seat-swap /
+  // clean-Opus — that stale 0.7.3 wording contradicted the skip policy)
+  calls = seq([EMPTY, EMPTY]);
+  r = await callVendor(base);
+  assert.ok(!r.ok && r.degrade === true && /SKIP/.test(r.error), `degrade/skip missing: ${JSON.stringify(r)}`);
+  assert.ok(!/clean Opus|seat-swap.*fills/i.test(r.error), "degrade message must not instruct a seat swap");
+  assert.equal(calls(), 2, "must stop at maxAttempts (2), never hammer");
+
+  // fast crash IS retryable
+  calls = seq([CRASH, OK]);
+  r = await callVendor(base);
+  assert.ok(r.ok && calls() === 2, "fast crash must retry once");
+
+  // a true TIMEOUT is NOT retried (would burn another print-timeout window)
+  calls = seq([TIMEOUT, OK]);
+  r = await callVendor(base);
+  assert.ok(!r.ok && /timed out/.test(r.error) && calls() === 1, `timeout must not retry: ${JSON.stringify(r)}`);
+
+  _setRunImplForTests(null, null);
+  if (savedEnv.A === undefined) delete process.env.AI_BRIDGE_AGY_ATTEMPTS; else process.env.AI_BRIDGE_AGY_ATTEMPTS = savedEnv.A;
+  if (savedEnv.B === undefined) delete process.env.AI_BRIDGE_AGY_BACKOFF_MS; else process.env.AI_BRIDGE_AGY_BACKOFF_MS = savedEnv.B;
+  console.log("ok agy retry/degrade policy (offline, store-isolated)");
+}
 
 // --- MCP handshake -----------------------------------------------------------
 await new Promise((resolve, reject) => {

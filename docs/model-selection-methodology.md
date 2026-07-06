@@ -112,7 +112,7 @@
 
 **模型退役降级路径（已激活）**：本表按"角色"定义，模型名是角色的当前赋值，**单点维护在 ai-bridge 的 `route` skill 的角色→模型表，其余一切引用角色名**。**Fable 5 已退役（2026-06-11）→ planner 角色赋值改为 Opus 4.8、档位上调一级（medium→high）作为智力补偿。** 操作上：改 `route` skill 角色表一行 + 重装 plugin 刷 cache，全链生效。
 
-### 3.2 执行模型场景（`/ai-bridge:ai-model` 切换）
+### 3.2 执行模型场景（`/aibridge:ai-model` 切换）
 
 执行量（消耗大头）派给谁，定义为四个**执行场景**——语义是"优先用哪个模型执行"，切换的常见动因是配额水位（Claude 池是慢性瓶颈，所以默认 GPT 场景），但场景本身按模型命名。状态存 `~/.claude/ai-model`（单行：gpt/sonnet/gemini/opus，全局单一事实源），routing 每次派发现读，所有会话即刻生效。
 
@@ -140,7 +140,7 @@
 
 **不是每次实施完都要单独一轮 review。** 三层 + 收尾闸代替"每次都来"，按时机从早到晚：
 
-0. **plan 级跨厂商（Layer 0，最早最高杠杆）**：plan 在任何 task 派发前先过跨厂商 review（`smart-plan` Phase 4），循环至绿才放行执行。**面板=固定外厂 GPT+Gemini,不用 §3.2 的 per-scenario 表**——那张表按**场景执行方**定面板(给 code review 用),而 plan 的作者**永远是 planner(Opus),与场景无关**;套执行方逻辑会在 gpt 场景把 GPT 漏掉(实测 bug)。plan 评审 GPT 尤其不能丢:唯一同家族替补是 Opus、与 Opus planner 盲区相关、独立性弱(实测 GPT 曾独抓两厂全漏的 MAJOR)。`-gpt` 时=Gemini+clean-Opus 但**响亮声明这轮独立性薄**(Opus 评审与 Opus planner 同家族)。**判断密度最高的产物恰恰原先零跨厂商审**——智力前置到 plan（P1），review 价值也该前置。审的是**设计**不是实现，六维：① 拆分与排序 ② **完整性(锚定 spec 目标)**——漏的是 spec 要求的 task/边界/rollback，不是"能想到的一切" ③ route 字段诚实度（complexity 评实没、critical 漏标没——唯一审路由**输入**本身的地方）④ 接口/契约健壮性（地基型 task 下游全压在上面）⑤ 验收契约充分性（每 task 有真 verify）⑥ spec 对齐。设计 bug 在此抓到改一行 plan,漏到 code 要重做一个 phase——**性价比最高的一次 review**。
+0. **plan 级跨厂商（Layer 0，最早最高杠杆）**：plan 在任何 task 派发前先过跨厂商 review（`smart-plan` Phase 4），循环至绿才放行执行。**面板=固定外厂 GPT+Gemini,不用 §3.2 的 per-scenario 表**——那张表按**场景执行方**定面板(给 code review 用),而 plan 的作者**永远是 planner(Opus),与场景无关**;套执行方逻辑会在 gpt 场景把 GPT 漏掉(实测 bug)。plan 评审 GPT 尤其不能丢:唯一同家族替补是 Opus、与 Opus planner 盲区相关、独立性弱(实测 GPT 曾独抓两厂全漏的 MAJOR)。`-gpt` 时=Gemini+clean-Opus 但**响亮声明这轮独立性薄**(Opus 评审与 Opus planner 同家族)。**判断密度最高的产物恰恰原先零跨厂商审**——智力前置到 plan（P1），review 价值也该前置。审的是**设计**不是实现，八维（权威清单见 `smart-plan` Phase 4）：① 拆分与排序 ② **完整性(锚定 spec 目标)**——漏的是 spec 要求的 task/边界/rollback，不是"能想到的一切" ③ route 字段诚实度 + critical 独占 phase（complexity 评实没、critical 漏标没、critical task 是否独占 phase——唯一审路由**输入**本身的地方）④ 接口/契约健壮性（地基型 task 下游全压在上面）⑤ 验收契约充分性（每 task 有真 verify）⑥ spec 对齐 ⑦ 视觉契约接线（有 demo/mockup 时）⑧ reality premise 接地。设计 bug 在此抓到改一行 plan,漏到 code 要重做一个 phase——**性价比最高的一次 review**。
    **不是一份 plan 只跑一轮**:复杂 plan 合理地需多轮收敛(实证:trend-breakdown 6 轮)。**GREEN=最新一轮无 BLOCKER/MAJOR**(MINOR 记录并带进执行期当 tracked 清理,不追到零)——旧的"追 0 findings + 干净确认轮"白烧尾轮(3→3→0/1→1→0),砍掉省 ~1 轮(常 4→3)。**R1 全量、R2 起 delta**(只审上轮 findings 修复 + plan diff 段;后段真抓获本就在 delta,全量重读不变段=纯开销;仅 plan 评审,收尾闸仍全 diff 因代码跨缝回归)。**flake 不计一轮**(agy 空 stdout 重试/GPT token_revoked 换席在**同轮**内消化,只有产出 findings 的跨厂过关才进轮次)。**Gemini 席位=R1+收尾门,中间轮 GPT 单席**(账本:Gemini 值窄=设计眼 finding、却屡出幻觉 finding 纯仲裁开销+漏 GPT 抓的 BLOCKER+rogue 改树;GPT 单席非违铁律=金标准在+编排两段构成跨厂;独立性在 R1 与终局两最重关口保留足够);agy flake 直接**跳过该轮 Gemini**(GPT 兜),不启 clean-Opus 换席(那只给 -gpt)。**轮数不是过度设计信号,收敛轨迹才是**——但**硬性 8 轮上限**:8 真轮未 GREEN→**停,升级给人**定夺(继续/重构 spec/中止),是**升级触发非自动放绿**(13 轮 churn 该撞机制,不该自然磨停)。防 churn 另两闸:**(a) 加法型 finding 接受前 ground**(对 spec 非目标+源码核验,已否决就驳,meeting-summary C6 栽此);**(b) 收敛轨迹记 verdict**(每真轮 findings 数+严重度+架构落定否;计数下降健康,上升因移除=健康/因新增=scope creep 警报)。
 1. **连续层（零额外成本，逐 task）**：**TDD（先写失败测试→实现→过）** + verify 脚本 + 红线 + typecheck 是机械正确性的地板；编排会话（Opus）对每个 task 做两段式 review（spec 符合性 + 代码质量）。TDD 兜住"作者想到要测的" per-task 正确性;编译器 + 下一个 task 的 typecheck 免费抓**类型级**接口破坏。这一层本来就有，不算额外。
 2. **phase 边界（执行期唯一的跨厂商层）**：完整 phase diff 的跨厂商 review——按 §3.2 当期场景面板（默认 GPT 5.5 high + Gemini 双签），过了才打 tag、进部署决策；切换 diff 升 GPT xhigh。**取消原"每个 critical task 一轮跨厂审"**(太重;TDD 已兜 per-task,跨厂真价值在集成/设计——接口/契约/多包接线,这些**接线时才现**、不在单 task 内)。**critical 旗标现只 = 抬档 + 更小心 + 信号 planner 把该 task 隔离成独占一个 phase**(§5),使其 phase 边界审在**任何消费者接线前**就跑——早覆盖那类"类型正确但语义错"的接口缺陷(编译器抓不到、下游会复利)。**频率主旋钮 = phase 粒度**:phase 切小,这层跑得勤、问题新鲜时批量逮;高风险/地基 task 独占 phase 由 **Layer 0 强制查**(取代原自动 task 审的唯一保障)。
@@ -170,7 +170,8 @@
 3. **关键检查上提**：subagent 执行的删除/收尾类 task，"全仓零引用"等终局检查由编排会话复核，不下放。
 4. **消化外包的固定姿势**：编排遇到大块原始材料（长日志、dump、生成代码、外部文档）不直接读，丢给 agy 消化、只回摘要（`agy -p`，Flash 档；ai-bridge 建成后走其消化工具）。判断输入类阅读除外（P4 边界条件）。
 5. **续接子代理:handoff-first,resume 为闭合例外**：跨 dispatch 续接开发任务默认**全新 spawn + handoff 简报**,不 resume 前一个执行体——干净窗口胜过全上下文（P4:resume 把死胡同与啰嗦工具输出一起拖回,污染比配额更贵的窗口）。**handoff 简报五要素**:① 已完成到哪 task/commit ② 还剩什么 ③ 试过且失败的路 ④ 关键 `file:line` ⑤ 验收契约;一份简报同时承载同模型续接与跨模型升级。**resume 仅限两种、闭合不可扩**:(1) 同一 diff 的 review 改修、同 vendor(GPT `ai_exec resume`,codex 会话即该 diff 工作态,=托管回环遇红路径);(2) 你正逐回合紧驱动、不跨 compaction 的单个紧耦合任务(Claude `run_in_background` 保活 + SendMessage)。非这两种一律 handoff——"感觉需要上下文"不是第三种;尤其不为"下一个 plan task(每 task 干净窗口)/换模型(本就续不了)/前文走了死路/跨回合/Gemini(agy 无 resume)"而 resume。详见 ai-bridge `route` skill 的 Continuation 节。
-6. **UI demo 沉淀为视觉契约 + 视觉决策断言**：有 demo 时它比文字 spec 信息量大却不在 SPOT 链里→实现者重新解读填空→落盘与 demo 相差颇多(与"假接入"同类:验收检了代理、没检真结果)。修=demo 存在时:① 按路径钉进 spec 作权威视觉源(SPOT);② 蒸馏**承重**视觉决策(信息层级/控件存在/分组顺序/各状态有别/可供性)为显式断言,**标契约 vs 示意**(占位文案/默认色等示意细节非契约,整张像素化会过度约束滚镀金 churn);③ UI task 带视觉断言作验收、verify 在 **DOM/结构级**断言渲染输出(非截图像素 diff、非"组件文件存在"代理);④ xreview 加**视觉一致性**维度(把 demo+渲染页给 reviewer 判断有没有兑现承重决策,违的引承重断言、示意细节不报);⑤ smart-plan Phase 4 加视觉契约维度、Phase 3 出口检查 UI task 接了视觉契约。两层检法=DOM 断言(确定地板)+ xreview 判断(地板兜不住的气质层级),不做像素 diff。
+6. **现实门(Reality gate)rationale**:全部 review 层(L0–L3+收尾闸)都在检「产物 vs spec」——读 plan 和代码;结构性盲区=从不检「产物 vs 现实」。每次 review 拦不住的中途 replan 都同构:代码对其前提正确、前提却偏离现实(prod 表空、部署 dist 陈旧、真实输入比 fixture 野)。合成 fixture 全绿、healthz 200、收尾闸 GREEN,线上照样坏——读更多代码关不掉这个盲区,只有真实证据能。故 done 前两道必查:①执行现场新鲜度(跑的确实是刚构建的代码,mtime/build_commit 断言,**healthz 活着≠新代码在跑**——陈旧 dist 曾让正确修复看起来无效、误诊数日);②一次真实数据 live smoke(非 fixture)。绿测试+绿收尾闸**不可宣称 done**;部署归用户时诚实降级表述("merged & review-GREEN,现实未验,待 deploy+live smoke"),两义务随 handoff travel 为 OPEN gate。纯重构无运行时表面则**显式**跳过(静默跳过会被读成"已过门")。plan 侧镜像=reality premise 接地(smart-plan Phase 2)。
+7. **UI demo 沉淀为视觉契约 + 视觉决策断言**：有 demo 时它比文字 spec 信息量大却不在 SPOT 链里→实现者重新解读填空→落盘与 demo 相差颇多(与"假接入"同类:验收检了代理、没检真结果)。修=demo 存在时:① 按路径钉进 spec 作权威视觉源(SPOT);② 蒸馏**承重**视觉决策(信息层级/控件存在/分组顺序/各状态有别/可供性)为显式断言,**标契约 vs 示意**(占位文案/默认色等示意细节非契约,整张像素化会过度约束滚镀金 churn);③ UI task 带视觉断言作验收、verify 在 **DOM/结构级**断言渲染输出(非截图像素 diff、非"组件文件存在"代理);④ xreview 加**视觉一致性**维度(把 demo+渲染页给 reviewer 判断有没有兑现承重决策,违的引承重断言、示意细节不报);⑤ smart-plan Phase 4 加视觉契约维度、Phase 3 出口检查 UI task 接了视觉契约。两层检法=DOM 断言(确定地板)+ xreview 判断(地板兜不住的气质层级),不做像素 diff。
 
 ### Phase A 实例标注
 
@@ -190,7 +191,7 @@
 | 同厂商加额外 review 轮 | 盲区与编排重合，边际价值≈0；额外的那轮应该跨厂商 |
 | 照单全收跨厂商 review 意见 | reviewer 不懂仓库惯例，误报率不低；必须先仲裁 |
 | 给任何 task 加 task 级跨厂审 | 该层已取消——TDD+连续层兜 per-task,跨厂真价值在集成/设计(接线时现);critical task 靠独占 phase 早覆盖,不靠逐 task 审 |
-| 配额吃紧仍不切场景 | 执行量是消耗大头；水位变了按 §3.2 切场景（`/ai-bridge:ai-model`），别等见底 |
+| 配额吃紧仍不切场景 | 执行量是消耗大头；水位变了按 §3.2 切场景（`/aibridge:ai-model`），别等见底 |
 | 在 plan 里写死模型名 | 执行场景是执行期变量；plan 标类型，模型执行期查表 |
 | review 面板全是执行厂商 | 自审失去视角差；面板必须含非执行厂商（Gemini 场景由 Opus 补位） |
 | 争议仲裁时重审全 diff | 只裁争议点；全量重审是把 max 预算摊薄到无效面上 |

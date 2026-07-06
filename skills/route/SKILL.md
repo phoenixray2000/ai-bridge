@@ -5,295 +5,195 @@ description: Intelligent model-routing entry point. Use when about to execute a 
 
 # route — model dispatch
 
-You are the router. Routing intelligence belongs at plan-time; at execution
-time routing is three mechanical acts: **classify → look up → dispatch** (plus
-escalate-on-resistance and explicit override). If a task needs real "smart"
-routing at execution time, the plan was written too thin — fix the plan, don't
-improvise the model.
+Classify → look up → dispatch (+ escalate on resistance). Routing intelligence
+belongs at plan-time; if a task needs "smart" routing at execution time, the plan
+is too thin — fix the plan, don't improvise the model.
+*Rationale/history: `docs/model-selection-methodology.md`. Skills are the
+behavioral SPOT; on conflict, skills win.*
 
-## Step 1 — classify the task
+## Step 1 — classify
 
-Two orthogonal axes, not one list of types:
-- **complexity** ∈ `low` | `high` — how much intelligence executing it needs.
-  Sets the tier within the scenario pool (Step 3).
-- **critical** (optional flag) — asymmetric cost if wrong, in either sense:
-  *irreversible* (cutover, delete, storage write-migration) OR *foundational*
-  (high blast radius — later tasks depend on it: an interface, a shared
-  abstraction). It raises the executor's TIER (be more careful) and signals the
-  planner to **isolate it into its own phase** (Step 6). It does NOT trigger a
-  task-level cross-vendor review anymore — that was removed as too heavy.
+- **complexity** `low` | `high` — how much intelligence execution needs; picks
+  the tier within the scenario pool (Step 3).
+- **critical** (optional flag) — *irreversible* (cutover / delete / storage
+  write-migration) OR *foundational* (high blast radius: later tasks depend on
+  it). Raises the tier + must be isolated into its OWN phase (Step 6). Does NOT
+  trigger a task-level cross-vendor review (that layer was removed).
 
 | Class | Signal | Leg |
 |---|---|---|
-| **digest** | bulk material in, facts out (logs, dumps, repo scans, doc lookups); judgment ≈ 0 | `ai_digest` (never read the raw material yourself) |
-| **execute (low)** | plan has complete code + verify; execution = transcribe + run verify | executor leg per scenario, low tier |
-| **execute (high)** | plan left on-site decisions (tuning, classification, reconcile-with-reality) | executor leg per scenario, high tier |
-| **review** | check a diff/output against spec | `xreview` skill (cross-vendor) |
-| **open-ended** | writing spec/plan, architecture arbitration | NOT routable here — drafting goes to the **planner** role (`smart-plan`), arbitration stays orchestrator |
+| **digest** | bulk material in, facts out; judgment ≈ 0 | `ai_digest` (never read the raw material yourself) |
+| **execute (low)** | plan has complete code + verify | executor per scenario, low tier |
+| **execute (high)** | plan left on-site decisions | executor per scenario, high tier |
+| **review** | check a diff/output against spec | `xreview` (cross-vendor) |
+| **open-ended** | spec/plan/architecture | NOT routable — drafting → **planner** (`smart-plan`), arbitration stays orchestrator |
 
-## Role → model (operational SPOT — change here on model retirement)
+## Role → model (operational SPOT — edit here on model retirement)
 
-Stable role names; the model is the current assignment. Everything else
-references the role, so a model swap is a one-line edit here.
+| Role | Model (tier) |
+|---|---|
+| **planner** (spec/plan/arch) | **Opus 4.8 (high)** (Fable retired → Opus with a one-tier bump) |
+| **orchestrator** (acceptance, arbitration, subtle fixes) | Opus 4.8 (medium), main session |
+| **reviewer** | GPT 5.5 high · Gemini Pro high |
+| **digester** | Gemini Flash |
+| executor | scenario × complexity table below |
 
-| Role | Model (tier) | Notes |
-|---|---|---|
-| **planner** (spec/plan/arch drafting) | **Opus 4.8 (high)** | was Fable 5; Fable retired → reassigned to Opus 4.8 with a one-tier bump (medium→high) as intelligence compensation |
-| **orchestrator** (this session: acceptance, arbitration, subtle fixes) | Opus 4.8 (medium) | user's session model; the methodology's recommended value |
-| **reviewer** | GPT 5.5 high · Gemini Pro high | cross-vendor panel |
-| **digester** | Gemini Flash | context offload |
-| low / high complexity executor | per scenario × complexity table below | — |
-
-## Step 2 — read the current routing knob
+## Step 2 — read the knob
 
 ```
-cat ~/.claude/ai-model        # "<scenario> [-vendor ...]"; missing → gpt (default)
+cat ~/.claude/ai-model    # "<scenario> [-gpt]"; missing → gpt (default)
 ```
 
-Parse: a `<scenario>` word (`gpt`/`sonnet`/`gemini`/`opus`) plus an optional
-`-gpt` flag (GPT quota is dead). That one flag is the ONLY availability modifier —
-GPT is the sole reviewer that is both top-tier AND exhaustible. Gemini is cheap /
-~always available; Opus is your own Claude pool (can't be quota-dead). This one
-line drives both execution and the review panel.
+`<scenario>` ∈ gpt/sonnet/gemini/opus. `-gpt` (GPT quota dead) is the ONLY
+availability modifier — GPT is the sole top-tier-AND-exhaustible reviewer;
+Gemini is ~always available, Opus is your own pool.
 
-## Step 3 — look up the model (CANONICAL TABLE)
+## Step 3 — look up (CANONICAL TABLE)
 
-Scenario picks the executor pool; **complexity picks the tier inside it** (low →
-medium, high → high). The executor stays consistent within a scenario — judgment
-does NOT silently jump to a pricier model; that's what escalation is for (Step 5).
+Scenario picks the executor pool; complexity picks the tier inside it (low →
+medium, high → high). The executor never silently jumps pools — that's
+escalation (Step 5).
 
-| scenario | low complexity | high complexity | review panel |
+| scenario | low | high | review panel |
 |---|---|---|---|
 | **gpt** (default) | GPT 5.5 medium | GPT 5.5 high | GPT high + Gemini |
 | **sonnet** | Sonnet 4.6 medium | Sonnet 4.6 high | GPT high + Gemini |
 | **gemini** | Gemini 3.1 Pro (High) | **Sonnet 4.6 high** | GPT high + Opus medium |
 | **opus** | Opus medium | Opus high | GPT high + Gemini |
 
-- **gemini is the weak executor**: even low complexity needs Pro **High** tier, and
-  high complexity leaves the pool entirely for **Sonnet high** (Gemini high isn't
-  enough). So the gemini scenario only offloads *easy* work to Gemini.
-
-Notes on the panel:
-- **GPT is in every panel when it has quota — MANDATORY, not preferential.** Its
-  review is the gold standard. A gating review (phase boundary / Layer 0 / critical
-  task / closing gate) that runs while GPT has quota **must include GPT**; **single-
-  vendor Gemini as a gate is forbidden** (it dropped the gold standard — broken, not
-  "light"). Gemini is the second voice *alongside* GPT, never its substitute. The only
-  legitimate lightness lever is **frequency** (review fewer tasks), never "swap GPT for
-  cheaper Gemini-only". The ONLY thing that removes GPT is `-gpt` (quota dead), which
-  swaps to **Opus**, not to Gemini-only. (See xreview "铁律".)
-- The **executor's own vendor leaves** the panel only when it isn't GPT: gemini
-  scenario → Gemini steps out, Opus takes the seat.
-- The **orchestrator two-stage review (continuous layer) is always on top**, every
-  scenario, every task — the guaranteed floor.
-- **This per-scenario table is for CODE review only** (the panel keys off the *scenario
-  executor*). **Plan review (Layer 0) does NOT use it** — a plan's author is always the
-  planner (Opus), independent of scenario, so plan review uses a FIXED external panel
-  (GPT + Gemini, GPT mandatory); applying the executor-keyed table to a plan drops GPT
-  in the gpt scenario. See `smart-plan` Phase 4.
+- **Gemini is the weak executor**: low complexity already needs Pro High; high
+  complexity leaves the pool for Sonnet high.
+- **GPT is MANDATORY in every gating panel while it has quota** — see xreview
+  「铁律」(SPOT). Single-vendor Gemini gates are forbidden; lightness =
+  frequency (fewer/smaller phases), never vendor-dropping.
+- The executor's own vendor leaves the panel only when it isn't GPT (gemini
+  scenario → Opus takes the seat). Orchestrator two-stage is always on top.
+- **This table is for CODE review only.** Plan review (Layer 0) uses a FIXED
+  external panel — the plan's author is always the planner, not the scenario
+  executor. See `smart-plan` Phase 4.
 
 ### `-gpt` modifier (GPT quota dead)
 
-When the line carries `-gpt`: **swap the GPT slot in the panel for a clean-window
-Opus 4.8 medium** subagent (fresh `model: opus`, own evidence file — distinct from
-the context-saturated orchestrator review), and never dispatch execution to GPT.
+Swap the GPT panel slot for a **clean-window Opus 4.8 medium** subagent (fresh
+`model: opus`, own evidence file); never dispatch execution to GPT.
 
-| state | panel becomes |
+| state | panel |
 |---|---|
-| `sonnet -gpt` | Gemini + Opus |
-| `opus -gpt` | Gemini + Opus |
-| `gemini -gpt` | Opus only → with the orchestrator that's a single external voice; **say so loudly** (thin this round) |
+| `sonnet -gpt` / `opus -gpt` | Gemini + Opus |
+| `gemini -gpt` | Opus only — single external voice, **say so loudly** |
 
-`gpt -gpt` is incoherent (kills the executor) → rejected on write.
-
-Claude pool always keeps spec/plan/arch (planner = Opus 4.8 high), orchestration +
-per-task acceptance, review arbitration, subtle fixes — regardless of scenario.
+`gpt -gpt` is incoherent → rejected on write. The Claude pool always keeps
+spec/plan/arch, orchestration + acceptance, arbitration, subtle fixes.
 
 ## Step 4 — dispatch
 
-- **Claude executor** (sonnet/opus rows, or gemini-scenario high complexity) →
-  Agent tool with `model: sonnet` or `model: opus`, a fresh subagent with the
-  task's complete instructions. Pass the plan task verbatim; clean window.
-- **GPT executor** → MCP `ai_exec` with `vendor: "gpt"`, `cwd` = the repo,
-  `report_path` set so detailed output lands on disk and stdout stays a summary.
-  Reference the plan by path in the prompt (the agent reads it from disk).
-- **Gemini executor** → MCP `ai_exec` with `vendor: "gemini"`.
-- **digest** → MCP `ai_digest`.
+- **Claude executor** → Agent tool (`model: sonnet`/`opus`), fresh subagent,
+  plan task verbatim, clean window.
+- **GPT executor** → `ai_exec` `vendor:"gpt"`, `cwd` = repo, `report_path` set;
+  reference the plan by path.
+- **Gemini executor** → `ai_exec` `vendor:"gemini"`. **digest** → `ai_digest`.
 
 ## Step 5 — escalate on resistance, never preemptively
 
-Start at the (scenario, complexity) cell. On a red that the cell's model can't
-break, **escalate by MODEL to Opus** — not by re-trying a pricier tier of the
-same model:
+Start at the (scenario, complexity) cell. The SAME model iterates 1–2 rounds
+first (feedback is cheap); only persistent red escalates — **by MODEL to Opus**:
+non-opus scenario → **Opus high** → still stuck → **Opus max**; opus scenario →
+**Opus max** (only Opus-on-Opus reaches max). Escalation tracks *resistance*,
+not importance; target the failing point, never re-run the whole task.
+Same-model retry uses resume (Continuation case 1); escalation to Opus is always
+a **fresh Opus subagent + handoff brief** (can't resume across models). The one
+preemptive max: irreversible-cutover pre-flight audit, written into the plan.
 
-- non-opus scenario stuck → **Opus high** → still stuck → **Opus max**
-- opus scenario stuck → **Opus max** (Opus escalating itself is the only path to max)
+## Step 6 — critical tasks
 
-So: any pool hands off to Opus **high** first; only Opus-on-Opus reaches **max**.
-On resistance, the SAME model iterates one or two rounds first (feedback is cheap)
-— only persistent red escalates the model. Escalation tracks *resistance*, not
-*importance*; it targets the specific failing point, never re-runs the whole task.
-The SAME-model retry uses resume (GPT `ai_exec resume` — continuation case 1 below);
-the **escalation to Opus is always a fresh Opus subagent + handoff brief** (you can't
-resume across models anyway — codex session ≠ Claude subagent), per the Continuation
-rules. Irreversible-cutover pre-flight audits are the one preemptive max (written into
-the plan, see critical).
+A critical task keeps its complexity-derived executor, plus:
+- **tier raised**, executor told to be more careful;
+- **isolated into its OWN phase** (`smart-plan` enforces; Layer 0 checks). Its
+  phase-boundary review then fires **before any consumer wires in** — catching
+  the type-correct-but-semantically-wrong interface defect the compiler can't.
+- irreversible-cutover: its phase review runs at **GPT xhigh** + an **Opus-max
+  pre-flight audit** (Claude pool) as an explicit plan step.
 
-## Step 6 — critical tasks (orthogonal to complexity)
+Critical is a flag, not a tier — `low` + critical is legal (one-line
+irreversible deletion).
 
-A task flagged **critical** (irreversible OR foundational, see Step 1) keeps its
-complexity-derived executor and does two things — **neither is a task-level
-cross-vendor review** (that layer was removed as too heavy):
-- **raises the tier** and tells the executor to be more careful;
-- signals the planner to **isolate it into its OWN phase** (`smart-plan` enforces this;
-  Layer 0 checks it). Reason: a foundational task's defect can be *type-correct but
-  semantically wrong* (field meaning / nullability / ordering) — the compiler won't
-  catch it, and a later consuming task would compound on it. Isolating it into its own
-  phase makes the **phase-boundary** cross-vendor review fire on it **before any
-  consumer is wired** — early coverage without a per-task review round.
-- if it's an irreversible-cutover, the phase-boundary review of its (own) phase runs at
-  **GPT xhigh**, and an **Opus-max pre-flight audit** (Claude pool, the one preemptive
-  max — NOT cross-vendor, so unaffected by the removal) is written into the plan step.
+## Review layers (summary)
 
-Critical is a flag, not a tier — a task can be `low` complexity AND critical (e.g. a
-one-line but irreversible deletion). Everything else relies on the continuous layer
-(TDD + verify + orchestrator two-stage) per task, and the **phase-boundary** cross-
-vendor review as the catch-all — so keep phases small so that review fires while the
-work is still fresh.
+**L0** plan-level cross-vendor (`smart-plan` Phase 4) → **L1** continuous per
+task (TDD: failing test → implement → pass; verify/redlines/typecheck;
+orchestrator two-stage — free; compiler + next task's typecheck catch type-level
+breaks) → **L2** phase-boundary cross-vendor (the ONLY execution-stage
+cross-vendor layer — keep phases small) → **Closing gate** + **Reality gate**
+(below).
 
-The review architecture has **three layers + a closing gate**, earliest first (the old
-per-critical-task cross-vendor layer was removed — TDD covers per-task correctness, and
-integration/design defects only surface at wiring = phase boundary, not inside a task):
-- **Layer 0 — plan-level cross-vendor review** (`smart-plan` Phase 4): the plan itself
-  is reviewed cross-vendor before any task dispatches. Densest-judgment artifact,
-  cheapest fix — design bugs caught before any code exists. Highest-value layer.
-- **Layer 1 — continuous, per task** (TDD: failing test → implement → pass; + verify /
-  redlines / typecheck; + orchestrator two-stage). Free, every task. The compiler +
-  the next task's typecheck catch type-level interface breaks for free.
-- **Layer 2 — phase-boundary cross-vendor**: full phase diff, every phase. This is where
-  execution-stage cross-vendor coverage lives — integration/contract/wiring defects
-  surface here. Keep phases small so it fires often; isolate critical tasks into their
-  own phase so it fires on them early.
-- **Closing gate — whole-implementation cross-vendor** (Layer 3-final, below): the whole
-  plan diff once, before done.
+## Step 7 — report
 
-## Step 7 — report the routing decision
-
-After dispatching, tell the user in one line: complexity + critical?, active
-scenario, and which model/leg got the work. Routing must be legible, not silent.
+One line after dispatching: complexity + critical?, active scenario, which
+model/leg got the work. Routing must be legible.
 
 ## Managed loop vs one-shot
 
-If this task's output has an acceptance contract waiting (verify + spec check) —
-i.e. it's a plan task — run the **managed loop**: dispatch → verify + two-stage
-review → on red, arbitrate (small fix directly / continue the vendor via
-`ai_exec` `resume`) → green → next task. A bare `/ai-bridge:gpt` call with no
-contract is one-shot. The contract is the dividing line.
+Output has an acceptance contract (verify + spec check) → **managed loop**:
+dispatch → verify + two-stage review → on red arbitrate (small fix direct /
+`ai_exec resume`) → green → next task. No contract (bare `/aibridge:gpt`) →
+one-shot.
 
-## Continuation — handoff-first; resume is a CLOSED exception
+## Continuation — handoff-first; resume is a CLOSED 2-case exception
 
-Continuing a dev task across dispatches defaults to **fresh-spawn + a handoff brief**,
-NOT resuming the prior executor. Clean window beats full context (P4: the window is
-costlier than quota — a resumed session drags every dead-end and verbose tool dump
-back in).
+Default = **fresh-spawn + handoff brief** (clean window beats full context; a
+resumed session drags every dead-end back in). **Brief = 5 fields, always:**
+① done (task/commit) ② remaining ③ tried-and-failed ④ key `file:line` anchors
+⑤ acceptance contract. One brief serves same-model continuation AND cross-model
+escalation.
 
-**Handoff brief — the continuation carrier (5 fields, always):**
-1. **Done** — to which task / commit.
-2. **Remaining** — what's left.
-3. **Tried-and-failed** — dead ends, so the next agent doesn't repeat them.
-4. **Anchors** — key `file:line`.
-5. **Acceptance contract** — verify + spec check.
+**Resume ONLY in exactly these two cases:**
+1. **Same-diff review-fix, same vendor** — applying confirmed xreview findings
+   to the diff the SAME executor just produced (GPT `ai_exec resume`; the
+   managed-loop on-red path).
+2. **One tightly-coupled task driven turn-by-turn in one sitting, no compaction
+   crossed** — Claude subagent via `run_in_background` + SendMessage.
 
-One brief serves BOTH a same-model continuation AND a cross-model escalation.
-
-**Resume is permitted in EXACTLY these two cases — nothing else:**
-1. **Same-diff review-fix, same vendor.** Applying confirmed xreview findings to the
-   diff the SAME executor just produced — GPT via `ai_exec resume: <sessionId>` (the
-   codex session IS that diff's working state). This is the managed-loop on-red path.
-2. **A single tightly-coupled task you are driving turn-by-turn in ONE sitting** — a
-   Claude subagent kept alive via `run_in_background: true` + SendMessage, where
-   re-briefing each micro-step would cost more than the pollution, and it does NOT
-   cross a compaction.
-
-If the situation is not LITERALLY one of those two → fresh-spawn + handoff. The list is
-**closed**: "this feels like it needs the context" is NOT a third case. Specifically
-NEVER resume for — the next plan task (each task = clean window), a different model
-(impossible anyway), after the prior context went down a failed path (that pollution
-is exactly what you're escaping), across turns / after compaction / a lost agent, or
-Gemini (agy has no resume). When in doubt, handoff.
+The list is closed — "feels like it needs the context" is NOT a third case.
+Never resume for: the next plan task, a different model (impossible), a context
+that went down a failed path, across compaction / lost agent, or Gemini (agy has
+no resume). When in doubt, handoff.
 
 ## Closing gate — whole-implementation xreview (Layer 3-final)
 
-When the **last** task of a plan goes green, do NOT declare done yet. Practice
-shows a final cross-vendor review **of the entire accumulated diff** catches
-substantive problems the per-phase reviews structurally cannot: cross-phase
-integration breaks, emergent inconsistencies, a seam two phases each half-built.
-Phase-boundary review (Layer 3) sees one phase's diff; this sees the whole.
+When the last task goes green, do NOT declare done:
+1. `xreview` the **full plan diff** (`git diff <plan-base>..HEAD` vs spec),
+   label `final-<plan-name>`.
+2. Arbitrate into `final-<plan-name>-verdict.md` (additive-finding gate applies).
+3. Dispatch confirmed fixes through the managed loop, re-verify.
+4. **Re-run the WHOLE-diff xreview until `VERDICT: GREEN`.**
 
-So the managed loop has a mandatory closing step — automatic, not optional:
+**"Whole diff" is a LITERAL contract — a focused re-review CANNOT clear the
+gate.** Each round re-reviews the entire diff afresh, not just the patched
+spots: a fix can regress or break a seam elsewhere, and this pass exists for
+exactly that integration coverage. (Deliberate exception to focused re-review —
+per-finding arbitration and Step-5 escalation narrow to the disputed point
+because they are not gates; this IS the gate.) It catches what per-phase reviews
+structurally can't: cross-phase integration breaks, seams two phases each
+half-built. Scope: managed-loop plan execution only.
 
-1. Run `xreview` on the **full plan diff** (`git diff <plan-base>..HEAD`, all changed
-   paths, against the spec) — same panel/contract/evidence as any xreview, label
-   `final-<plan-name>`.
-2. **Arbitrate** into `final-<plan-name>-verdict.md` (same additive-finding gate —
-   a whole-diff reviewer is just as prone to "you should also build X").
-3. **Dispatch the confirmed fixes** through the same managed loop (low-complexity →
-   executor, subtle → orchestrator direct), re-verify.
-4. **Re-run the WHOLE-diff xreview** until it returns `VERDICT: GREEN`. Only then is
-   the plan done.
+## Reality gate — artifact vs REALITY (final, after the closing xreview)
 
-**"Re-run the whole diff" is a LITERAL contract — a focused re-review CANNOT substitute.**
-Each closing-gate round re-reviews the **entire** `git diff <plan-base>..HEAD` afresh,
-NOT just the findings you fixed. Re-checking only the patched spots ("did A/B/C get
-fixed?") does NOT clear the gate: a fix can regress or break a seam elsewhere, and the
-whole-diff pass exists precisely for that integration-level coverage — re-scoping it to
-the fixes reintroduces the exact blind spot the gate was built to close. The gate is
-cleared ONLY by a full whole-diff xreview returning GREEN.
+Layers 0–3 check the artifact against the *spec*; none check it against
+*reality* — code can be correct against a false premise (empty prod table, stale
+deployed dist, wilder real inputs than the fixtures). Before "done", two
+non-optional checks:
 
-(This is the deliberate exception to the focused-re-review rule used for per-finding
-arbitration and Step-5 escalation — those narrow to the disputed point because they're
-*not* gates. The closing gate IS the gate, so it is always whole-diff.)
+1. **Execution-site freshness** — assert what actually runs IS the code just
+   built (dist mtime later than deploy start / `build_commit`), **NOT**
+   "`healthz` is 200" (process-alive ≠ new-code-running). Never claim a fix
+   verified without it.
+2. **One live smoke against REAL data** — run the change end-to-end once on real
+   production input (not a fixture) and assert the behavior at the real
+   execution site.
 
-This is the execution-side mirror of Layer 0: Layer 0 gates the plan before any code;
-this gates the whole implementation before done. Both are whole-artifact cross-vendor
-passes; both loop-until-green. Scope: plan execution only (the managed loop) — a
-one-shot call has no whole-diff to close on.
-
-## Reality gate — the artifact vs REALITY (final, after the closing xreview)
-
-The whole review architecture — Layers 0–3, the closing xreview included — checks the
-**artifact against the spec**: it reads plan and code. It has one structural blind spot:
-it **never checks the artifact against reality**. Every mid-execution replan the reviews
-could NOT prevent shares this shape — the code was *correct against its premise*, but the
-premise diverged from what the flow assumed: a prod table was empty, the deployed dist
-was stale, the real inputs varied more than the fixtures. Synthetic fixtures pass GREEN,
-`healthz` says the process is alive, the closing xreview says the diff matches the spec —
-and the thing is still broken in production. Reading more code cannot close this; only
-real evidence can.
-
-So the managed loop has a **final, non-optional gate after the closing xreview, before
-'done'**:
-
-1. **Execution-site freshness.** Assert that what actually runs **is** the code you just
-   built — the deployed dist / emitted prompt / running binary, by mtime-later-than-
-   deploy-start or `build_commit`, **NOT** "`healthz` is 200" (process-alive ≠ new-code-
-   running). A stale-dist deploy is the failure that made a *correct* fix look ineffective
-   across days of re-diagnosis (the error just changed shape under input nondeterminism
-   and read as "fixed"). The freshness sentinel in `fast-deploy` IS this assertion — the
-   methodology obligation is to **never claim a fix verified without it**.
-2. **One live smoke against REAL data.** Run the change end-to-end **once** on real
-   production input (the real conversation / record / transcript), not a fixture, and
-   assert the observed behavior at the real execution site. This is the single check the
-   entire review architecture cannot substitute — it's the only pass that consumes reality
-   instead of a proxy for it.
-
-**'Done' is NOT claimable from green tests + green closing xreview alone** — only when the
-reality gate has passed. If deploy is the **user's** call (not run in-flow), the claim is
-downgraded honestly — *"merged & review-GREEN; NOT yet verified against reality — pending
-deploy + live smoke"*, never "done" (the honesty discipline: evidence before assertions).
-The two obligations then travel with the handoff as the remaining work; a lingering "待
-live smoke" is an OPEN gate, not a footnote.
-
-**Scope:** any plan whose output a live system consumes. A pure refactor with no runtime
-or data surface has no reality to gate against — say so and skip **explicitly** (a silent
-skip reads as "gated" when it wasn't).
+"Done" is NOT claimable from green tests + green closing xreview alone. If
+deploy is the user's call, downgrade the claim honestly — *"merged &
+review-GREEN; NOT yet verified against reality — pending deploy + live smoke"* —
+and the two obligations travel with the handoff as OPEN gates. Scope: any plan a
+live system consumes; a pure refactor with no runtime surface skips
+**explicitly** (a silent skip reads as "gated" when it wasn't).

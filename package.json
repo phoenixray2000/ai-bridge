@@ -1,11 +1,11 @@
 {
   "name": "ai-bridge",
-  "version": "0.1.0",
+  "version": "0.11.0",
   "description": "MCP bridge exposing GPT (codex CLI) and Gemini (agy CLI) as review/exec/digest tools for cross-vendor dev workflows",
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "smoke": "node scripts/smoke.mjs",

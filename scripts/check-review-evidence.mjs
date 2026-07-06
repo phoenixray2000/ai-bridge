@@ -59,7 +59,7 @@ if (missing.length || empty.length) {
   for (const f of missing) console.error(`  missing: ${f}`);
   for (const f of empty) console.error(`  empty:   ${f}`);
   console.error(
-    `\nRun /ai-bridge:xreview for this phase (vendors: ${vendors.join(" + ")})` +
+    `\nRun /aibridge:xreview for this phase (vendors: ${vendors.join(" + ")})` +
     (requireVerdict ? " and record the arbitration verdict" : "") + " before tagging.",
   );
   process.exit(1);

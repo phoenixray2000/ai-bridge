@@ -125,6 +125,17 @@ export function agyArgs({ role, prompt, effort, cwd, family }) {
 // ---------------------------------------------------------------------------
 const DEFAULT_TIMEOUT_MS = 25 * 60 * 1000;
 
+// Test seam: callVendor spawns through this indirection so the retry/degrade
+// policy (bounded attempts / backoff / timeout-no-retry / degrade:true) can be
+// exercised OFFLINE — live agy stress-testing is banned (clustered cold-starts
+// provoke browser OAuth). Production never touches this; it defaults to run.
+let runImpl = (...args) => run(...args);
+let recoverImpl = (...args) => recoverAgyAnswer(...args);
+export function _setRunImplForTests(fn, recoverFn) {
+  runImpl = fn ?? ((...args) => run(...args));
+  recoverImpl = recoverFn ?? ((...args) => recoverAgyAnswer(...args));
+}
+
 function killTree(child) {
   if (IS_WIN) {
     try {
@@ -189,9 +200,13 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input } = 
 // agy 1.0.x renders print-mode output through a TTY "drip" renderer: with
 // stdout piped, the answer is silently discarded (exit 0, empty stdout), and
 // the fast shutdown often races the brain transcript flush (0-byte files).
-// The conversation SQLite store is written reliably, so recovery order is:
-// stdout → transcript.jsonl → conversations/<id>.db. All three failing is a
-// loud error, never a silent empty answer.
+// Recovery from the conversation store is BEST-EFFORT ONLY: probes show the
+// empty-stdout flake is usually an early failure whose answer never reached
+// the store either (recovery hit rate ≈ 0 in stress runs). The PRIMARY
+// mitigation is the bounded de-clustered retry in callVendor; this one cheap
+// store read runs before each re-call because it's ~free when it does hit.
+// Recovery order: transcript.jsonl → conversations/<id>.db; both failing is
+// simply "retry" (and after max attempts, degrade — never a silent empty answer).
 // ---------------------------------------------------------------------------
 
 // Minimal protobuf wire-format walk collecting printable strings (we have no
@@ -357,7 +372,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     const args = codexArgs({ effort, resume });
     commandLine = `codex ${args.join(" ")} <stdin-prompt>${cwd ? ` (cwd=${cwd})` : ""}`;
     // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
-    result = await run(codexBin(), args, { cwd, timeoutMs, input: prompt });
+    result = await runImpl(codexBin(), args, { cwd, timeoutMs, input: prompt });
     if (result.ok) {
       const parsed = parseCodexJson(result.stdout);
       // We always pass --json; no parseable events means something is wrong
@@ -388,8 +403,8 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // `prompt=consent` flow — EVEN with a valid non-expired keyring token (observed:
     // browser.go consumerOAuth 5s after a valid keyring load). Repeated interactive
     // OAuth is a Google account-risk-control exposure. So: FEW attempts, LONG backoff
-    // (never cluster), and on final failure DEGRADE (caller drops the Gemini seat to
-    // clean Opus, GPT anchors) — never hammer. A true TIMEOUT is not retried.
+    // (never cluster), and on final failure the caller SKIPS the Gemini seat for the
+    // round (GPT anchors; no seat-swap) — never hammer. A true TIMEOUT is not retried.
     // The clean-context one-shot model is a VIRTUE (fresh independent review); a
     // persistent session would auth once but POLLUTE context — rejected. The only
     // deterministic escalation is a PTY (one-shot + fake TTY: no drip, still clean
@@ -406,7 +421,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1 && backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
       const attemptSince = Date.now();
-      const r = await run(agyBin(), args, { cwd, timeoutMs });
+      const r = await runImpl(agyBin(), args, { cwd, timeoutMs });
       const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
       if (r.ok && r.stdout !== "") {
         return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
@@ -416,7 +431,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
         // rarely has the answer — the flake is an early failure, not a discarded
         // completion — but the single read is ~free, so try before re-calling).
         try {
-          const recovered = recoverAgyAnswer({ since: attemptSince, prompt });
+          const recovered = recoverImpl({ since: attemptSince, prompt });
           return { ok: true, commandLine, output: recovered.answer, note: `answer recovered from ${recovered.source}${tag}` };
         } catch (error) {
           lastErr = `empty stdout + recovery failed: ${error?.message ?? error}`;
@@ -430,7 +445,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
       // fast crash / transient re-login → retryable
     }
-    return { ok: false, commandLine, degrade: true, error: `agy failed after ${maxAttempts} gentle attempt(s): ${lastErr}. DEGRADE this Gemini seat (clean Opus fills it, GPT anchors) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent). Inspect ${path.join(AGY_HOME, "conversations")}` };
+    return { ok: false, commandLine, degrade: true, error: `agy failed after ${maxAttempts} gentle attempt(s): ${lastErr}. SKIP this Gemini seat for the round (GPT anchors; note Gemini absent in the verdict) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent) and do NOT seat-swap. Inspect ${path.join(AGY_HOME, "conversations")}` };
   }
 
   // gpt-only from here (the gemini branch returns in all paths above).
