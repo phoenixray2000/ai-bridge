@@ -57,8 +57,8 @@ escalation (Step 5).
 | scenario | low | high | review panel |
 |---|---|---|---|
 | **gpt** (default) | GPT 5.5 medium | GPT 5.5 high | GPT high + Gemini |
-| **sonnet** | Sonnet 4.6 medium | Sonnet 4.6 high | GPT high + Gemini |
-| **gemini** | Gemini 3.1 Pro (High) | **Sonnet 4.6 high** | GPT high + Opus medium |
+| **sonnet** | Sonnet 5 medium | Sonnet 5 high | GPT high + Gemini |
+| **gemini** | Gemini 3.1 Pro (High) | **Sonnet 5 high** | GPT high + Opus medium |
 | **opus** | Opus medium | Opus high | GPT high + Gemini |
 
 - **Gemini is the weak executor**: low complexity already needs Pro High; high

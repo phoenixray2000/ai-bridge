@@ -1,7 +1,7 @@
 {
   "name": "aibridge",
   "description": "Intelligent model routing for dev workflows: dispatch tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents by the model-selection methodology. Bundles the aibridge MCP server (ai_review/ai_exec/ai_digest) and seven routing skills. (No hyphen in the name: a hyphen breaks the slash-menu fuzzy match.)",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "author": {
     "name": "Ray"
   },

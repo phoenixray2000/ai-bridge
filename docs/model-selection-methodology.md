@@ -121,8 +121,8 @@
 | 场景 | 低复杂度 | 高复杂度 | 关键节点 review |
 |---|---|---|---|
 | **GPT（默认）** | GPT 5.5 medium | GPT 5.5 high | GPT 5.5 high + Gemini 双签 |
-| **Sonnet** | Sonnet 4.6 medium | Sonnet 4.6 high | GPT 5.5 high + Gemini 双签 |
-| **Gemini** | Gemini 3.1 Pro (High) | **Sonnet 4.6 high** | GPT 5.5 high + Opus medium |
+| **Sonnet** | Sonnet 5 medium | Sonnet 5 high | GPT 5.5 high + Gemini 双签 |
+| **Gemini** | Gemini 3.1 Pro (High) | **Sonnet 5 high** | GPT 5.5 high + Opus medium |
 | **Opus** | Opus 4.8 medium | Opus 4.8 high | GPT 5.5 high + Gemini 双签 |
 
 通则：
