@@ -116,6 +116,24 @@ source / accepted-or-rejected / reason / dispatch target. Confirmed fixes dispat
 → executor, subtle → orchestrator direct); false positives rejected with a
 written reason — never accept wholesale.
 
+### Verdict anchoring — command output only, never memory (anti-confabulation)
+
+The verdict's three load-bearing facts must be pasted from commands run NOW,
+this round — hand-typing any of them from memory is exactly how a fabricated
+GREEN gets written (2026-07-10 incident: a verdict claimed a 5-file/157-line
+diff plus per-line Gemini findings while `git diff` was empty and no
+`ai_review` call had ever been made in the session):
+
+1. **Diff header**: re-run `git diff --stat <base>..<head>` immediately before
+   writing the verdict; paste its raw output into the verdict header. Empty
+   diff → **ABORT, no verdict file may exist** — nothing was reviewed.
+2. **Vendor presence**: a vendor's findings section may exist ONLY if that
+   vendor's evidence file exists non-empty (`test -s <label>-<vendor>.md`)
+   from THIS round's `ai_review` call. No evidence file → vendor is ABSENT:
+   say so; zero findings content attributed to it.
+3. **Commit hashes**: every hash cited must be copied from `git log` output
+   run this round, never recalled.
+
 ### Ground every ADDITIVE finding before accepting it
 
 Findings that flag existing defects pass straight through — the gate fires only
