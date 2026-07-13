@@ -228,3 +228,24 @@
     ├─ Opus high 仍不破 → Opus max
     └─ Opus 场景遇阻 → 直接 Opus max（只对准病灶，不扩面）
 ```
+
+---
+
+## 8. superpowers 退役（2026-07-14）
+
+Fable 5 后 superpowers 系列技能（brainstorming / writing-plans / TDD /
+systematic-debugging）全局禁用。依据：这类技能的本质是给弱模型上的流程脚手
+架，模型能力上来后每次调用烧的上下文买不回增量。但**禁用 ≠ 全部原生接管**，
+四件套逐项记账：
+
+| superpowers 技能 | 接管方式 |
+|---|---|
+| brainstorming | `/grilling` 逐题拷问 + smart-plan Phase 1 回写仪式（收敛=回写 spec；确认对象是 spec diff，不是对话） |
+| writing-plans | smart-plan Phase 2 内建 plan 格式（自包含钉死，无外部依赖） |
+| test-driven-development | route Step 4 执行契约（3 条反作弊规则随每次派发 verbatim 下发）。执行者是 GPT/Sonnet/Gemini——编排层模型升级碰不到它们；且 TDD 纪律对抗的是绿灯压力下的激励漂移，不是知识缺口，模型再强不自动免疫 |
+| systematic-debugging | 零补偿：全局 CLAUDE.md 证据纪律 + production-incident-triage 已是用真实事故史调出的更强定制版，第三份违反 SPOT |
+
+同日 `docs/superpowers/` 目录约定 hard-cut 为 `docs/reviews`（存量证据一并
+搬迁，不留旧路径；`exec-reports` 等同级目录同样上提一层）。review 四层门
+（L0 / 相位 / 收尾 / 现实）与此决策无关、照旧跑满——它们对抗的是作者自审
+盲区相关性，模型升级不改变该相关性。

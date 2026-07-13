@@ -83,7 +83,7 @@ claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\serv
 before a phase tags/merges — wire one line into a consuming repo's verify chain:
 
 ```
-node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/superpowers/reviews [--verdict] [--verdict-lines] [--gpt-dead]
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews [--verdict] [--verdict-lines] [--gpt-dead]
 ```
 
 Dual-sign = all listed vendor files present and non-empty; `--verdict` also

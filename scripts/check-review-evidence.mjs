@@ -24,7 +24,7 @@ const has = (name) => process.argv.includes(`--${name}`);
 
 const label = arg("label");
 const vendors = arg("vendors", "gpt,gemini").split(",").map((v) => v.trim()).filter(Boolean);
-const dir = path.resolve(arg("dir", path.join("docs", "superpowers", "reviews")));
+const dir = path.resolve(arg("dir", path.join("docs", "reviews")));
 const requireVerdict = has("verdict");
 const requireVerdictLines = has("verdict-lines");
 const gptDead = has("gpt-dead");

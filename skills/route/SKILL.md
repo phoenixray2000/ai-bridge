@@ -91,7 +91,33 @@ spec/plan/arch, orchestration + acceptance, arbitration, subtle fixes.
   plan task verbatim, clean window.
 - **GPT executor** → `ai_exec` `vendor:"gpt"`, `cwd` = repo, `report_path` set;
   reference the plan by path.
+- **Every execute-class dispatch carries the plan header's GLOBAL
+  CONSTRAINTS** — verbatim dispatches inline them next to the task; by-path
+  dispatches instruct the executor to read the plan header first (constraints
+  only the orchestrator knows never reach a clean-window executor).
 - **Gemini executor** → `ai_exec` `vendor:"gemini"`. **digest** → `ai_digest`.
+
+### Execution contract — append VERBATIM to every execute-class task prompt
+
+Executors under green-pressure drift toward implementation-first and
+test-weakening at EVERY model tier — incentive failure, not a knowledge gap —
+so the rules travel with each dispatch. The orchestrator's own direct edits
+obey the same three. Scope: tasks that CHANGE code; read-only tasks
+(grounding checks, audits, digests) skip it — nothing to test or commit.
+
+```
+--- EXECUTION CONTRACT (obey exactly) ---
+1. RED FIRST, GREEN AFTER: write/adjust the test and RUN it BEFORE
+   implementing — it must fail, for the expected reason (a test that never
+   failed proves nothing). After implementing, RE-RUN that SAME test and see
+   it pass, then run the full verify.
+2. NEVER WEAKEN A TEST to get green: no deleted cases, loosened assertions,
+   or skips. A test blocking you → STOP and report; the author side
+   arbitrates whether the test or the implementation is wrong.
+3. REAL-SHAPED FIXTURES: test data mirrors production shape (timezones,
+   encodings, boundary forms). A test that cannot fail on real-shaped input
+   is not a test.
+```
 
 ## Step 5 — escalate on resistance, never preemptively
 
@@ -120,7 +146,7 @@ irreversible deletion).
 ## Review layers (summary)
 
 **L0** plan-level cross-vendor (`smart-plan` Phase 4) → **L1** continuous per
-task (TDD: failing test → implement → pass; verify/redlines/typecheck;
+task (TDD per the execution contract, Step 4; verify/redlines/typecheck;
 orchestrator two-stage — free; compiler + next task's typecheck catch type-level
 breaks) → **L2** phase-boundary cross-vendor (the ONLY execution-stage
 cross-vendor layer — keep phases small) → **Closing gate** + **Reality gate**
@@ -135,8 +161,17 @@ model/leg got the work. Routing must be legible.
 
 Output has an acceptance contract (verify + spec check) → **managed loop**:
 dispatch → verify + two-stage review → on red arbitrate (small fix direct /
-`ai_exec resume`) → green → next task. No contract (bare `/aibridge:gpt`) →
-one-shot.
+`ai_exec resume` — the on-red resume works on a deliberately dirty tree: pass
+`allow_dirty: true`, the ONE sanctioned use) → green → **commit checkpoint**
+(stage this task's files plus any in-repo review evidence/fixes produced
+since the last commit; the dirty-tree guard assumes a clean tree before the
+next dispatch — outside the on-red resume, `allow_dirty` is never the
+default) → next task. **CLEAN-TREE INVARIANT** (generalizes every checkpoint
+above): any step that writes repo files — a task, a gate ROUND's arbitration
+(red or green: commit the round's evidence/verdict BEFORE dispatching its
+fixes), the plan, a fix — ends by committing what it wrote; every fresh
+dispatch starts from a clean tree; the on-red same-diff resume is the sole
+sanctioned dirty exception. No contract (bare `/aibridge:gpt`) → one-shot.
 
 ## Continuation — handoff-first; resume is a CLOSED 2-case exception
 
@@ -166,6 +201,9 @@ When the last task goes green, do NOT declare done:
 2. Arbitrate into `final-<plan-name>-verdict.md` (additive-finding gate applies).
 3. Dispatch confirmed fixes through the managed loop, re-verify.
 4. **Re-run the WHOLE-diff xreview until `VERDICT: GREEN`.**
+5. Commit checkpoint per ROUND, not per gate: each round's evidence/verdict
+   commits at arbitration (red rounds included — BEFORE dispatching that
+   round's fixes); the final green round's commit is the gate's last act.
 
 **"Whole diff" is a LITERAL contract — a focused re-review CANNOT clear the
 gate.** Each round re-reviews the entire diff afresh, not just the patched

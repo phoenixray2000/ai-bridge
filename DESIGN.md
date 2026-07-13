@@ -1,7 +1,7 @@
 # ai-bridge 机制层设计
 
-> 定稿 2026-06-11。策略层是 collab-runtime 的
-> `docs/superpowers/model-selection-methodology.md`（v4，四执行场景版）；
+> 定稿 2026-06-11。策略层是本仓
+> `docs/model-selection-methodology.md`；
 > 本文档是机制层实现规格——策略如何不靠人肉记忆地被执行。
 > 通用能力：不绑定任何项目，user-scope 安装，所有仓库可用。
 
@@ -53,7 +53,7 @@ ai-bridge/
 ## 5. MCP 工具契约
 
 三工具通用：**双通道返回**——stdout 回执 ≤10 行结构化摘要（status/改动文件/verify 结果/遗留），
-详细报告落 `<repo>/docs/superpowers/exec-reports/<task>-<vendor>.md`（digest 例外，只回摘要）。
+详细报告落 `<repo>/docs/exec-reports/<task>-<vendor>.md`（digest 例外，只回摘要）。
 
 ### ai_review(vendor, prompt, effort=high, evidence_path?)
 - 无文件系统访问（材料全进 prompt）；gpt → codex `--sandbox read-only`，gemini → agy 不加 `--add-dir`。
@@ -83,7 +83,7 @@ ai-bridge/
 | `route <任务>` | 总入口：分类（消化/机械/判断/review）→ 读场景查表 → 派腿，报告路由理由 |
 | `gpt / gemini <prompt>` | 直达一次性调用（无验收契约） |
 | `digest <files\|dir> <指令>` | 材料不进编排上下文，digester 读完只回摘要 |
-| `smart-plan <spec>` | 澄清留编排 → 成文派 planner subagent（有 superpowers 则内嵌调 writing-plans）→ 出口检查 route 字段；brief 盖不住讨论 = 先回去补 spec |
+| `smart-plan <spec>` | 澄清留编排（未收敛先 grilling + 回写 spec）→ 成文派 planner subagent（内建 plan 格式）→ 出口检查 route 字段；brief 盖不住讨论 = 先回去补 spec |
 | `xreview <diff范围> [gpt\|gemini]` | 默认双签并行；证据各落 `reviews/<标识>-<vendor>.md`，编排仲裁出 `-verdict.md`（采纳/驳回/理由/派发），不让外厂互相合并 |
 | `ai-model [场景]` | 无参显示当前场景；带参写状态文件 |
 

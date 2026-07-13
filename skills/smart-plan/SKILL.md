@@ -5,9 +5,8 @@ description: Write an implementation plan with the correct model binding AND cro
 
 # smart-plan — model-bound planning
 
-`superpowers:writing-plans` governs HOW a plan is written but not WHO writes it;
-invoked bare, the session model writes the plan (wrong role) with no route
-fields. This skill closes both holes.
+A plan drafted casually in the session has the wrong author (the planner role
+exists for a reason) and no route fields. This skill closes both holes.
 *Rationale/history: `docs/model-selection-methodology.md`. Skills are the
 behavioral SPOT; on conflict, skills win.*
 
@@ -17,6 +16,20 @@ Align scope, read the spec, gather context — conversation-dense, keep it here.
 Converge into a written spec/decision doc: **the spec file is the handoff
 artifact, not the chat history**. If the drafting brief can't be covered by the
 spec, the spec is incomplete — fill it, don't ferry "the discussion".
+
+### Requirements not converged → grill, then WRITE BACK
+
+- No shared understanding yet → run `/grilling`: interview the user **one
+  question at a time**; anything answerable from the codebase, answer from the
+  codebase instead of asking.
+- **Convergence = write-back.** Every resolved question lands as a decision
+  line in the spec (decision + one-line why; overturned alternatives get an
+  "excluded: <reason>" line so later review rounds can't relitigate them). An
+  unwritten decision is a LOST decision — the planner never sees this chat
+  (Phase 2), so the failure mode is silent loss, not a loud error.
+- **The user confirms the updated spec (show the spec diff), not the chat.**
+  Their memory of the answers is minutes old — a missing line is caught now or
+  never.
 
 ### When a UI demo / mockup exists — capture it as a VISUAL CONTRACT
 
@@ -35,7 +48,25 @@ reference, the shipped page drifts. So:
 
 Dispatch an Agent as the **planner** role (`route` role table; now
 `model: opus`) with high-tier thinking ("ultrathink"). The subagent prompt must:
-- Invoke `superpowers:writing-plans` if available, else the built-in format.
+- Use the built-in plan format (self-contained, no external skill). The plan
+  is a FILE in the repo — `docs/plans/<name>.md` unless the user pins another
+  path (Phase 4 reviews it by reference). Header = spec path + plan-base
+  commit + the spec's GLOBAL CONSTRAINTS (redlines, platform limits — tasks
+  are dispatched verbatim, so constraints not in the plan never reach the
+  executor); tasks grouped into phases; each code task carries a goal,
+  `file:line`/symbol anchors, steps exact enough for a clean-window executor
+  (`low` tasks: the complete code/commands — route's low leg assumes the plan
+  already decided everything; no "add validation"-style placeholders; `high`
+  tasks may leave NAMED on-site decisions), a runnable **verify** (command +
+  expected observable), an **acceptance check** — the spec clause it satisfies
+  PLUS the observable that proves that clause holds (a section number alone is
+  not decidable; verify + acceptance is the contract the managed loop runs
+  on) — and a closing **commit step** (green → commit that task's changes,
+  staging only related files; an uncommitted task trips the next `ai_exec`'s
+  dirty-tree guard and escapes the closing gate's `<plan-base>..HEAD` range).
+  **Read-only tasks** (reality-premise grounding, audits) carry command +
+  expected evidence as their verify and explicitly SKIP the execution
+  contract's TDD steps and the commit step — nothing changes, nothing commits.
 - **Every task carries `complexity` (`low`|`high`)** + optional **`critical`**
   (irreversible: cutover/delete/storage write-migration; OR foundational: later
   tasks depend on it). Orthogonal — `low`+critical is legal. NO hardcoded model
@@ -68,6 +99,14 @@ Dispatch an Agent as the **planner** role (`route` role table; now
 ## Phase 3 — exit check (orchestrator, mechanical gate)
 
 Bounce the plan back if any of these is missing:
+- the built-in format's required fields: the plan file exists non-empty at
+  its pinned path; header has spec path + plan-base commit + the spec's
+  global constraints; every task sits
+  in a phase and has a goal, anchors, executor-ready steps, a runnable verify
+  (command + expected observable), an acceptance check (spec clause + proving
+  observable), and a commit step (read-only tasks: command + expected
+  evidence instead, TDD/commit exempt) — a missing plan-base also breaks the
+  closing gate's whole-diff range;
 - every task has `complexity`;
 - **every `critical` task sits in its own phase**;
 - finishing/deletion tasks reserve the final "whole-repo zero-reference" check
@@ -130,7 +169,7 @@ the user.
      consumer-set premise has an on-site grounding step before its dependent
      task? An ungrounded one is a finding.
 - **Evidence + arbitration** — per vendor:
-  `<repo>/docs/superpowers/reviews/plan-<name>-<vendor>.md`; orchestrator
+  `<repo>/docs/reviews/plan-<name>-<vendor>.md`; orchestrator
   arbitrates into `plan-<name>-verdict.md` (never vendor-merged). Apply the
   **additive-finding gate** (xreview, SPOT).
 - **Verdict records the convergence trajectory** — per real round: findings
@@ -140,6 +179,11 @@ the user.
 - **On red** — confirmed design flaw → planner revises; deep architectural
   dispute → orchestrator arbitrates; genuine spec gap → re-open the spec
   (Phase 1). Loop until GREEN **before any execution dispatch**.
+- **On GREEN, before the first dispatch: commit checkpoint** — stage and
+  commit the spec updates, the pinned plan file, and the Layer-0
+  evidence/verdict (only these), then assert the tree is clean: the first
+  `ai_exec` hits the dirty-tree guard otherwise (route managed loop keeps the
+  tree clean from here on).
 - **Clean terminal artifact** — the plan converges to a clean final state;
   round-by-round history lives in the verdict file, NEVER inside the plan (no
   "added X then removed X" archaeology in the deliverable).

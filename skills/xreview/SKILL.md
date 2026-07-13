@@ -55,7 +55,7 @@ Per panel vendor, MCP `ai_review` with:
 - `prompt`: instructions + references — diff range (`git diff <base>..<head>`),
   changed paths, spec path.
 - `effort`: default high; **xhigh for cutover diffs**.
-- `evidence_path`: `<repo>/docs/superpowers/reviews/<label>-<vendor>.md`.
+- `evidence_path`: `<repo>/docs/reviews/<label>-<vendor>.md`.
 
 Inline (omit `cwd`) only for a repo-less snippet. Run panel vendors
 concurrently.
@@ -111,7 +111,7 @@ and that's the author side's (Claude pool) job:
 3. **Conflicting on a P0 boundary** → take the disputed point itself to max;
    arbitrate only the dispute.
 
-Write `<repo>/docs/superpowers/reviews/<label>-verdict.md`: per finding —
+Write `<repo>/docs/reviews/<label>-verdict.md`: per finding —
 source / accepted-or-rejected / reason / dispatch target. Confirmed fixes dispatch per scenario (low-complexity
 → executor, subtle → orchestrator direct); false positives rejected with a
 written reason — never accept wholesale.
