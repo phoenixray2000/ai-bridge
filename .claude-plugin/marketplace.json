@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "aibridge",
-      "description": "Routing skills + aibridge MCP server (ai_review/ai_exec/ai_digest). Dispatches tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents per the model-selection methodology.",
-      "version": "0.12.0",
+      "description": "Routing skills + aibridge MCP server (async ai_review_start/ai_exec_start jobs + ai_digest). Dispatches tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents per the model-selection methodology.",
+      "version": "0.13.0",
       "source": "./",
       "author": {
         "name": "Ray"

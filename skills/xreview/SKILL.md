@@ -39,7 +39,7 @@ gate `check-review-evidence.mjs` fails loud on it unless `--gpt-dead`).
 
 ### agy (Gemini) failure — one internal retry, then SKIP, never hammer
 
-`ai_review` already retries agy once internally (2 attempts, 8s de-clustered
+The review job already retries agy once internally (2 attempts, 8s de-clustered
 backoff — recovers most flakes without provoking OAuth; only *clustered* rapid
 restarts do). If it still fails (`degrade: true`): **skip the Gemini seat this
 round** — GPT-solo (铁律 holds), note Gemini absent in the verdict. Do NOT loop
@@ -47,18 +47,25 @@ agy on top of the internal retry (clustered cold-starts provoke a browser OAuth
 re-consent — account-risk exposure), do NOT spin up a clean-Opus substitute
 (that is only for `-gpt`). A flake does not advance the round counter.
 
-## How — review by reference, never inline
+## How — async jobs, review by reference, never inline
 
-Per panel vendor, MCP `ai_review` with:
+Reviews run as DETACHED background jobs (they survive session death; a harness
+retry maps back to the original job via the idempotency key — never a
+double-launch). Per panel vendor, `ai_review_start` with:
 - `cwd: <repo>` — the reviewer reads files / runs git itself. **Never paste
   code/diffs into the prompt** (Windows argv limit truncates; lossy trimming).
 - `prompt`: instructions + references — diff range (`git diff <base>..<head>`),
   changed paths, spec path.
 - `effort`: default high; **xhigh for cutover diffs**.
 - `evidence_path`: `<repo>/docs/reviews/<label>-<vendor>.md`.
+- `timeout_minutes`: default 25 — **raise (e.g. 60) for whole-batch / closing
+  gate diffs**; the vendor kill timer and agy's own print-timeout both follow it.
 
-Inline (omit `cwd`) only for a repo-less snippet. Run panel vendors
-concurrently.
+Start BOTH vendors first, then collect each with `ai_job_result` (long-polls
+120s; while it reports running, call it again — do NOT re-start). After a
+session crash/restart, `ai_job_result` with the old job_id recovers the
+finished review instead of re-running it. Inline (omit `cwd`) only for a
+repo-less snippet.
 
 ### Visual conformance — when a visual contract exists
 
@@ -71,10 +78,10 @@ hierarchy / grouping / affordances / state treatments are honored. Findings must
 cite a **load-bearing** assertion; incidental demo details (placeholder text,
 default colors) are not contract — don't flag them.
 
-## Output contract — append VERBATIM to EVERY `ai_review` prompt (SPOT)
+## Output contract — append VERBATIM to EVERY review prompt (SPOT)
 
 Reviewers default to chatty/interactive behavior, which breaks find-vs-dispatch
-and makes evidence un-gateable. Every `ai_review` prompt (here AND `smart-plan`
+and makes evidence un-gateable. Every review prompt (here AND `smart-plan`
 Phase 4) ends with:
 
 ```
@@ -129,7 +136,7 @@ diff plus per-line Gemini findings while `git diff` was empty and no
    diff → **ABORT, no verdict file may exist** — nothing was reviewed.
 2. **Vendor presence**: a vendor's findings section may exist ONLY if that
    vendor's evidence file exists non-empty (`test -s <label>-<vendor>.md`)
-   from THIS round's `ai_review` call. No evidence file → vendor is ABSENT:
+   from THIS round's review job. No evidence file → vendor is ABSENT:
    say so; zero findings content attributed to it.
 3. **Commit hashes**: every hash cited must be copied from `git log` output
    run this round, never recalled.

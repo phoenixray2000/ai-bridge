@@ -11,9 +11,14 @@ archaeology). Rationale for design decisions: `docs/model-selection-methodology.
   agy 上游修复 stdout 后按原设计实施(失败驱动刷新,家族+档位匹配)。
 - **run/killTree 健壮性**(GPT med,core-v0.1 review):Unix 只杀直接子进程(孤儿)、
   Windows taskkill 不观测结果 → 失败可能挂死。改 detached 进程组 kill + 二级超时。
+  (0.13.0 部分缓解:`ai_job_cancel` 走 taskkill /T /F 杀整棵 runner 树。)
 - **run stdout 无上限**(GPT med):实际被模型输出上限兜底,低优。
 - **protoStrings 过度递归**(双签 low):prompt 排除已缓解;彻底解需按 field-number
   定位答案字段而非盲扫。
+
+- **corrupt job.json 阻塞 startJob(设计如此,fail-loud)**:持久损坏的 job.json 在
+  幂等扫描中抛错(静默当"不存在"会重复启动 vendor)。恢复=删除对应
+  `~/.ai-bridge/jobs/<id>` 目录。若误伤频发再考虑隔离(quarantine rename)方案。
 
 ## Key operational facts (load-bearing, verified)
 
@@ -33,3 +38,9 @@ archaeology). Rationale for design decisions: `docs/model-selection-methodology.
 - **plugin 部署**:同版本号 install 会拉旧 zip 缓存 → 必须 bump 版本;uninstall 不清旧
   cache 目录;以 `installed_plugins.json` 的 installPath 为准。`git push` 绝不接管道
   (吞退出码,失败后级联 uninstall 曾致插件破损态)。
+- **Claude Code MCP 超时机制**(官方文档,2026-07 查实):工具调用总时长默认 ~28h
+  (`MCP_TOOL_TIMEOUT` / `.mcp.json` 每服务器 `timeout`);**stdio 空闲超时默认 30min**
+  (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`,无响应/无进度即掐)——同步长 review 被杀的
+  主嫌;会话进程死亡("resume with a fresh process")会连带杀 stdio MCP server 及其
+  管道子进程。review/exec 异步 job 化(0.13.0)整类消除:detached runner + 落盘状态
+  + 幂等键(重试回原 job,不重复冷启 agy)。

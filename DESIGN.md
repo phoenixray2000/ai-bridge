@@ -18,7 +18,9 @@
 ai-bridge/
 ├─ .claude-plugin/        # plugin manifest（含 MCP server 注册）
 ├─ src/                   # MCP server（stdio）
-│   ├─ server.mjs         # 工具定义：ai_review / ai_exec / ai_digest
+│   ├─ server.mjs         # 工具定义：ai_review_start / ai_exec_start / ai_job_* / ai_digest
+│   ├─ jobs.mjs           # 异步 job 层（落盘状态/幂等键/heartbeat 活性/终态先写者胜）
+│   ├─ job-runner.mjs     # detached runner（跨会话存活的执行体）
 │   └─ vendors.mjs        # codex/agy 命令构造 + 运行 + 回读
 ├─ skills/                # 七条斜杠命令（/ai-bridge 列全族）
 │   ├─ route/ gpt/ gemini/ digest/ smart-plan/ xreview/ ai-model/
@@ -50,19 +52,31 @@ ai-bridge/
 
 通则：机械一律 medium；review 面板必须含非执行厂商；routing 每次派发**现读**状态文件（不缓存）。
 
-## 5. MCP 工具契约
+## 5. MCP 工具契约（0.13.0 起 review/exec 为异步 job）
 
-三工具通用：**双通道返回**——stdout 回执 ≤10 行结构化摘要（status/改动文件/verify 结果/遗留），
-详细报告落 `<repo>/docs/exec-reports/<task>-<vendor>.md`（digest 例外，只回摘要）。
+同步阻塞调用把 20-40min 的 vendor 运行绑死在 Claude 会话上（stdio 空闲超时默认
+30min 掐静默长调用；会话崩溃连带杀 MCP server 和管道子进程；harness 重试再冷启
+agy = OAuth 风控暴露）。故 review/exec 改为 **detached job**：start 毫秒级返回
+job_id，runner 独立进程、全状态落盘 `~/.ai-bridge/jobs/<id>/`，跨会话可恢复；
+**幂等键**（kind+vendor+cwd+prompt+effort+paths）让重试命中原 job 不重复启动。
 
-### ai_review(vendor, prompt, effort=high, evidence_path?)
-- 无文件系统访问（材料全进 prompt）；gpt → codex `--sandbox read-only`，gemini → agy 不加 `--add-dir`。
-- evidence_path 落原始产出，供 verify 闸门机械检查。
+### ai_review_start(vendor, prompt, cwd?, effort=high, evidence_path?, timeout_minutes?)
+- by-reference：prompt 只带指令+路径/diff 范围，reviewer 从 cwd 自己读盘（gpt →
+  codex danger-full-access+git 安全网；gemini → agy `--add-dir --sandbox` 只读）。
+- evidence_path 由 runner 在完成时落原始产出，供 verify 闸门机械检查。
 
-### ai_exec(vendor, prompt, cwd, effort=medium, resume?, allow_dirty?)
-- cwd 指哪写哪（main 检出合法）；**dirty-tree guard**：工作树有未提交改动即拒绝，`allow_dirty: true` 显式越过；worktree 仅为并行执行时的建议。
-- 返回带 vendor session id；`resume: <id>` 续同一会话发修正指令（codex exec resume）——托管回环的回路。
-- 发布物 = prompt + plan.md 路径（exec 类让 CLI 自己读盘省 token）。
+### ai_exec_start(vendor, prompt, cwd, effort=medium, resume?, allow_dirty?, report_path?, timeout_minutes?)
+- **dirty-tree guard 在 start 时同步检查**（脏树立刻失败，不产 job）；cwd 指哪写哪。
+- 完成结果带 vendor session id；`resume: <id>` 续同一会话发修正指令——托管回环的回路。
+- 发布物 = prompt + plan.md 路径（exec 类让 CLI 自己读盘省 token）；report_path
+  双通道（详细报告落盘、stdout 只回 ≤10 行摘要）。
+
+### ai_job_status / ai_job_result(wait_seconds=120) / ai_job_cancel
+- result 为 long-poll：到点未完成返回 running（非错误），继续 collect、勿重 start。
+- runner 死而无终态标记 → 对账为响亮 FAILED（附 runner.log 尾部），绝不永久 running。
+- cancel 杀整棵 runner 进程树（taskkill /T /F；杀前核验命令行确属本 job 的
+  runner——heartbeat 只证明 pid 曾属于我们，PID 复用时拒杀并对账 failed）。
+- 终态 job 保留 7 天后 GC（evidence/report 落盘文件不受影响）。
 
 ### ai_digest(prompt, files?|cwd?, vendor=gemini, effort=medium)
 - files ≤400KB 嵌入（读者无 fs 访问）；cwd 授目录读权限（全仓扫描）。产出=事实摘要，不是判断。
@@ -90,7 +104,7 @@ ai-bridge/
 ## 8. 托管回环 vs 一次性调用
 
 界定标准一条：**产出有没有验收契约（verify + spec 对照）在等**。
-plan 内 task 一律托管回环：编排发 ai_exec → verify + 两段 review → 红了仲裁
+plan 内 task 一律托管回环：编排发 ai_exec_start（ai_job_result 收）→ verify + 两段 review → 红了仲裁
 （小修直改 / 需 vendor 继续则 resume 续会话）→ 绿了下一个 task。
 plan 外的 /gpt /gemini 是一次性，问完即终。
 

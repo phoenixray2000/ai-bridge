@@ -62,7 +62,7 @@ Dispatch an Agent as the **planner** role (`route` role table; now
   PLUS the observable that proves that clause holds (a section number alone is
   not decidable; verify + acceptance is the contract the managed loop runs
   on) — and a closing **commit step** (green → commit that task's changes,
-  staging only related files; an uncommitted task trips the next `ai_exec`'s
+  staging only related files; an uncommitted task trips the next `ai_exec_start`'s
   dirty-tree guard and escapes the closing gate's `<plan-base>..HEAD` range).
   **Read-only tasks** (reality-premise grounding, audits) carry command +
   expected evidence as their verify and explicitly SKIP the execution
@@ -140,11 +140,12 @@ the user.
     hallucinated findings, missed BLOCKERs, rogue edits. GPT-solo is NOT the
     forbidden Gemini-solo: the gold standard is present; independence is
     preserved at the two heaviest gates.)
-  - **agy flake** → one internal retry happens inside `ai_review`; if it still
+  - **agy flake** → one internal retry happens inside the review job; if it still
     fails, skip Gemini this round (GPT anchors, note the absence). Never loop
     agy, never seat-swap (xreview degrade policy, SPOT).
-- **By reference** — `ai_review` with `cwd`, prompt gives spec path + plan path;
-  reviewers read from disk.
+- **By reference, async** — `ai_review_start` with `cwd`, prompt gives spec
+  path + plan path; reviewers read from disk. Start both vendors, collect each
+  with `ai_job_result` (repeat while running — never re-start).
 - **R1 full, R2+ delta.** R1 reviews the whole plan; from R2 review only the
   fixes to the previous round's findings + the plan's changed sections. (Plan
   review only — the closing gate stays literal whole-diff: code regresses
@@ -182,7 +183,7 @@ the user.
 - **On GREEN, before the first dispatch: commit checkpoint** — stage and
   commit the spec updates, the pinned plan file, and the Layer-0
   evidence/verdict (only these), then assert the tree is clean: the first
-  `ai_exec` hits the dirty-tree guard otherwise (route managed loop keeps the
+  `ai_exec_start` hits the dirty-tree guard otherwise (route managed loop keeps the
   tree clean from here on).
 - **Clean terminal artifact** — the plan converges to a clean final state;
   round-by-round history lives in the verdict file, NEVER inside the plan (no

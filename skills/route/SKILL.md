@@ -1,6 +1,6 @@
 ---
 name: route
-description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies by complexity (low/high) + critical flag, reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT via ai_exec, Gemini via agy, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario×complexity→model table that all other ai-bridge skills defer to.
+description: Intelligent model-routing entry point. Use when about to execute a task and you need to decide which model/vendor runs it — classifies by complexity (low/high) + critical flag, reads the current execution scenario, dispatches to the right leg (Claude subagent, GPT/Gemini via async ai_exec_start jobs, or ai_digest), and reports the routing decision. This skill holds the CANONICAL scenario×complexity→model table that all other ai-bridge skills defer to.
 ---
 
 # route — model dispatch
@@ -89,13 +89,17 @@ spec/plan/arch, orchestration + acceptance, arbitration, subtle fixes.
 
 - **Claude executor** → Agent tool (`model: sonnet`/`opus`), fresh subagent,
   plan task verbatim, clean window.
-- **GPT executor** → `ai_exec` `vendor:"gpt"`, `cwd` = repo, `report_path` set;
-  reference the plan by path.
+- **GPT executor** → `ai_exec_start` `vendor:"gpt"`, `cwd` = repo,
+  `report_path` set; reference the plan by path. Collect with `ai_job_result`
+  (long-polls; repeat while running, never re-start — the idempotency key maps
+  a retry to the original job). The completed result carries the session id
+  for `resume`. Raise `timeout_minutes` for long tasks.
 - **Every execute-class dispatch carries the plan header's GLOBAL
   CONSTRAINTS** — verbatim dispatches inline them next to the task; by-path
   dispatches instruct the executor to read the plan header first (constraints
   only the orchestrator knows never reach a clean-window executor).
-- **Gemini executor** → `ai_exec` `vendor:"gemini"`. **digest** → `ai_digest`.
+- **Gemini executor** → `ai_exec_start` `vendor:"gemini"`, same collect flow.
+  **digest** → `ai_digest` (synchronous — digests are short).
 
 ### Execution contract — append VERBATIM to every execute-class task prompt
 
@@ -161,7 +165,7 @@ model/leg got the work. Routing must be legible.
 
 Output has an acceptance contract (verify + spec check) → **managed loop**:
 dispatch → verify + two-stage review → on red arbitrate (small fix direct /
-`ai_exec resume` — the on-red resume works on a deliberately dirty tree: pass
+`ai_exec_start`+`resume` — the on-red resume works on a deliberately dirty tree: pass
 `allow_dirty: true`, the ONE sanctioned use) → green → **commit checkpoint**
 (stage this task's files plus any in-repo review evidence/fixes produced
 since the last commit; the dirty-tree guard assumes a clean tree before the
@@ -183,7 +187,7 @@ escalation.
 
 **Resume ONLY in exactly these two cases:**
 1. **Same-diff review-fix, same vendor** — applying confirmed xreview findings
-   to the diff the SAME executor just produced (GPT `ai_exec resume`; the
+   to the diff the SAME executor just produced (GPT `ai_exec_start`+`resume`; the
    managed-loop on-red path).
 2. **One tightly-coupled task driven turn-by-turn in one sitting, no compaction
    crossed** — Claude subagent via `run_in_background` + SendMessage.

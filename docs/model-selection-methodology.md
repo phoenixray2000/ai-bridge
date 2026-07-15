@@ -169,7 +169,7 @@
 2. **max 审计写进 plan 步骤**：不可逆切换前的预演审计作为显式步骤出现在 plan 里，标注档位。
 3. **关键检查上提**：subagent 执行的删除/收尾类 task，"全仓零引用"等终局检查由编排会话复核，不下放。
 4. **消化外包的固定姿势**：编排遇到大块原始材料（长日志、dump、生成代码、外部文档）不直接读，丢给 agy 消化、只回摘要（`agy -p`，Flash 档；ai-bridge 建成后走其消化工具）。判断输入类阅读除外（P4 边界条件）。
-5. **续接子代理:handoff-first,resume 为闭合例外**：跨 dispatch 续接开发任务默认**全新 spawn + handoff 简报**,不 resume 前一个执行体——干净窗口胜过全上下文（P4:resume 把死胡同与啰嗦工具输出一起拖回,污染比配额更贵的窗口）。**handoff 简报五要素**:① 已完成到哪 task/commit ② 还剩什么 ③ 试过且失败的路 ④ 关键 `file:line` ⑤ 验收契约;一份简报同时承载同模型续接与跨模型升级。**resume 仅限两种、闭合不可扩**:(1) 同一 diff 的 review 改修、同 vendor(GPT `ai_exec resume`,codex 会话即该 diff 工作态,=托管回环遇红路径);(2) 你正逐回合紧驱动、不跨 compaction 的单个紧耦合任务(Claude `run_in_background` 保活 + SendMessage)。非这两种一律 handoff——"感觉需要上下文"不是第三种;尤其不为"下一个 plan task(每 task 干净窗口)/换模型(本就续不了)/前文走了死路/跨回合/Gemini(agy 无 resume)"而 resume。详见 ai-bridge `route` skill 的 Continuation 节。
+5. **续接子代理:handoff-first,resume 为闭合例外**：跨 dispatch 续接开发任务默认**全新 spawn + handoff 简报**,不 resume 前一个执行体——干净窗口胜过全上下文（P4:resume 把死胡同与啰嗦工具输出一起拖回,污染比配额更贵的窗口）。**handoff 简报五要素**:① 已完成到哪 task/commit ② 还剩什么 ③ 试过且失败的路 ④ 关键 `file:line` ⑤ 验收契约;一份简报同时承载同模型续接与跨模型升级。**resume 仅限两种、闭合不可扩**:(1) 同一 diff 的 review 改修、同 vendor(GPT `ai_exec_start`+`resume`,codex 会话即该 diff 工作态,=托管回环遇红路径);(2) 你正逐回合紧驱动、不跨 compaction 的单个紧耦合任务(Claude `run_in_background` 保活 + SendMessage)。非这两种一律 handoff——"感觉需要上下文"不是第三种;尤其不为"下一个 plan task(每 task 干净窗口)/换模型(本就续不了)/前文走了死路/跨回合/Gemini(agy 无 resume)"而 resume。详见 ai-bridge `route` skill 的 Continuation 节。
 6. **现实门(Reality gate)rationale**:全部 review 层(L0–L3+收尾闸)都在检「产物 vs spec」——读 plan 和代码;结构性盲区=从不检「产物 vs 现实」。每次 review 拦不住的中途 replan 都同构:代码对其前提正确、前提却偏离现实(prod 表空、部署 dist 陈旧、真实输入比 fixture 野)。合成 fixture 全绿、healthz 200、收尾闸 GREEN,线上照样坏——读更多代码关不掉这个盲区,只有真实证据能。故 done 前两道必查:①执行现场新鲜度(跑的确实是刚构建的代码,mtime/build_commit 断言,**healthz 活着≠新代码在跑**——陈旧 dist 曾让正确修复看起来无效、误诊数日);②一次真实数据 live smoke(非 fixture)。绿测试+绿收尾闸**不可宣称 done**;部署归用户时诚实降级表述("merged & review-GREEN,现实未验,待 deploy+live smoke"),两义务随 handoff travel 为 OPEN gate。纯重构无运行时表面则**显式**跳过(静默跳过会被读成"已过门")。plan 侧镜像=reality premise 接地(smart-plan Phase 2)。
 7. **UI demo 沉淀为视觉契约 + 视觉决策断言**：有 demo 时它比文字 spec 信息量大却不在 SPOT 链里→实现者重新解读填空→落盘与 demo 相差颇多(与"假接入"同类:验收检了代理、没检真结果)。修=demo 存在时:① 按路径钉进 spec 作权威视觉源(SPOT);② 蒸馏**承重**视觉决策(信息层级/控件存在/分组顺序/各状态有别/可供性)为显式断言,**标契约 vs 示意**(占位文案/默认色等示意细节非契约,整张像素化会过度约束滚镀金 churn);③ UI task 带视觉断言作验收、verify 在 **DOM/结构级**断言渲染输出(非截图像素 diff、非"组件文件存在"代理);④ xreview 加**视觉一致性**维度(把 demo+渲染页给 reviewer 判断有没有兑现承重决策,违的引承重断言、示意细节不报);⑤ smart-plan Phase 4 加视觉契约维度、Phase 3 出口检查 UI task 接了视觉契约。两层检法=DOM 断言(确定地板)+ xreview 判断(地板兜不住的气质层级),不做像素 diff。
 
@@ -249,3 +249,21 @@ systematic-debugging）全局禁用。依据：这类技能的本质是给弱模
 搬迁，不留旧路径；`exec-reports` 等同级目录同样上提一层）。review 四层门
 （L0 / 相位 / 收尾 / 现实）与此决策无关、照旧跑满——它们对抗的是作者自审
 盲区相关性，模型升级不改变该相关性。
+
+---
+
+## 9. review/exec 异步 job 化（2026-07-16，0.13.0）
+
+动因=实测同步阻塞调用的三类死法：① Claude Code stdio MCP **空闲超时默认
+30min**（无响应即掐——whole-batch review 静默 30-40min 必死）；② 会话进程崩溃
+（"resume with a fresh process"）连带杀 MCP server 与管道内 vendor 子进程，
+整段 review 白烧；③ harness 报错重试 → 重新冷启动 agy → 聚簇 OAuth 风控暴露
+（§已知）。调大 timeout 只治 ①，是补丁不是根治。
+
+修=`ai_review_start`/`ai_exec_start` 毫秒级返回 job_id，detached runner 独立
+进程执行、全状态落盘（跨会话可恢复：新会话 `ai_job_result` 直接取回已完成的
+review，不重跑）；**幂等键**（kind+vendor+cwd+prompt+effort+paths）把重试映射
+回原 job——同参数在跑=返回原 job_id，绝不双发。`ai_job_result` long-poll
+120s（短调用一次 collect 完事，长调用几次廉价轮询）。digest 保持同步（分钟内）。
+顺带根治:agy `--print-timeout` 原硬编码 15m（比 25min kill 计时器先到，长
+review 的隐性杀手）→ 跟随 job 的 `timeout_minutes`。

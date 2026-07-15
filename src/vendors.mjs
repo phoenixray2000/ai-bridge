@@ -102,9 +102,13 @@ export function parseCodexJson(stdout) {
   return { threadId, text: texts.join("\n\n"), usage, errors };
 }
 
-export function agyArgs({ role, prompt, effort, cwd, family }) {
+export function agyArgs({ role, prompt, effort, cwd, family, timeoutMs }) {
   const model = geminiModel(family ?? (role === "digest" ? "flash" : "pro"), effort);
-  const args = ["--model", model, "--print-timeout", role === "exec" ? "30m" : "15m"];
+  // agy's own print-timeout follows the job's kill timer (it used to be a
+  // hardcoded 15m that silently killed long whole-batch reviews while our
+  // timer still had 10 minutes left).
+  const minutes = Math.max(1, Math.ceil((timeoutMs ?? DEFAULT_TIMEOUT_MS) / 60000));
+  const args = ["--model", model, "--print-timeout", `${minutes}m`];
   if (role === "exec") {
     // exec needs to WRITE — full permissions. cwd is the (clean-guarded) repo.
     args.push("--add-dir", cwd, "--dangerously-skip-permissions");
@@ -123,7 +127,7 @@ export function agyArgs({ role, prompt, effort, cwd, family }) {
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
-const DEFAULT_TIMEOUT_MS = 25 * 60 * 1000;
+export const DEFAULT_TIMEOUT_MS = 25 * 60 * 1000;
 
 // Test seam: callVendor spawns through this indirection so the retry/degrade
 // policy (bounded attempts / backoff / timeout-no-retry / degrade:true) can be
@@ -409,7 +413,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // persistent session would auth once but POLLUTE context — rejected. The only
     // deterministic escalation is a PTY (one-shot + fake TTY: no drip, still clean
     // context, no cluster), gated behind a native dep — not done here.
-    const args = agyArgs({ role, prompt, effort, cwd, family });
+    const args = agyArgs({ role, prompt, effort, cwd, family, timeoutMs });
     commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
     const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 2));
     // LONG backoff before a retry: the first process must have fully exited and
