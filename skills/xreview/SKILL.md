@@ -83,7 +83,9 @@ The agy review leg runs `--sandbox` headless: command-class tools are
 reviewer to run `git diff` is therefore a guaranteed silent death on any
 whole-batch gate (exit 0, empty stdout; small phase reviews only read files,
 which is why this never surfaced before batch-E). So for the **Gemini seat**:
-1. Materialize the diff first:
+1. Materialize the diff first (ensure the target dir exists — `git diff
+   --output` does NOT create parent directories; in a fresh consuming repo
+   `mkdir docs/reviews` first):
    `git diff --output=docs/reviews/<label>-diff.txt <base>..<head>`
    (**`--output=`, never shell `>`** — PowerShell 5.1 redirection re-encodes
    native stdout as UTF-16 and corrupts the diff file).

@@ -197,9 +197,15 @@ function progressText(jobId) {
   }
   const lines = [];
   const age = p.lastOutputAt ? Math.round((Date.now() - Date.parse(p.lastOutputAt)) / 1000) : null;
-  lines.push(`last output: ${age === null ? "never" : `${age}s ago`} | stdout: ${p.stdoutBytes ?? 0} bytes | watchdog: ${p.watchdog ?? "off"}`);
+  lines.push(
+    `${p.attempt ? `attempt ${p.attempt}: ` : ""}last output: ${age === null ? "never" : `${age}s ago`} | stdout: ${p.stdoutBytes ?? 0} bytes | watchdog: ${p.watchdog ?? "off"}`,
+  );
   if (p.cpuSamples?.length) {
     lines.push(`cpu samples: ${p.cpuSamples.map((s) => (s.cpuSeconds === null ? "?" : `${Number(s.cpuSeconds).toFixed(1)}s`)).join(" → ")}`);
+  }
+  for (const prior of p.priorAttempts ?? []) {
+    lines.push(`prior attempt ${prior.attempt}: ${prior.stdoutBytes ?? 0} bytes, watchdog ${prior.watchdog ?? "?"}` +
+      (prior.cpuSamples?.length ? `, cpu ${prior.cpuSamples.map((s) => (s.cpuSeconds === null ? "?" : `${Number(s.cpuSeconds).toFixed(1)}s`)).join("→")}` : ""));
   }
   return `\n${lines.join("\n")}`;
 }

@@ -264,6 +264,6 @@ systematic-debugging）全局禁用。依据：这类技能的本质是给弱模
 进程执行、全状态落盘（跨会话可恢复：新会话 `ai_job_result` 直接取回已完成的
 review，不重跑）；**幂等键**（kind+vendor+cwd+prompt+effort+paths）把重试映射
 回原 job——同参数在跑=返回原 job_id，绝不双发。`ai_job_result` long-poll
-120s（短调用一次 collect 完事，长调用几次廉价轮询）。digest 保持同步（分钟内）。
+300s（早返回使大窗口对短任务零代价；短调用一次 collect 完事，长调用几次廉价轮询）。digest 保持同步（分钟内）。
 顺带根治:agy `--print-timeout` 原硬编码 15m（比 25min kill 计时器先到，长
 review 的隐性杀手）→ 跟随 job 的 `timeout_minutes`。

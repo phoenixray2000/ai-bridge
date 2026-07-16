@@ -54,4 +54,20 @@ this round). GPT verdict: NEEDS-FIX (4 MAJOR, 2 MINOR).
 | 5 | run() full-trims stdout — an output that IS just "  VERDICT: GREEN" gets normalized past the raw-line anchor | MINOR | **ACCEPT** | Fix: stdout trimEnd only; gemini emptiness test trims both ends explicitly. Regression test added. |
 | 6 | ai_job_status hides progress diagnostics on terminal states — exactly when a wedge post-mortem needs them | MINOR | **ACCEPT** | Fix: progress shown for terminal states too, next-step hint kept. |
 
-Dispatch: all 6 fixed (orchestrator direct).
+Dispatch: all 6 fixed (orchestrator direct). R2 fixes landed as f7155b7.
+
+## Round 3 — 2026-07-16
+
+Whole diff re-reviewed afresh. Evidence: `async-hardening-r3-gpt.md`
+(job 2026-07-16T12-13-00-770Z-review-gpt-3ec46e, non-empty, this round).
+GPT verdict: NEEDS-FIX (2 MAJOR, 3 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | `git diff --output` does not create parent dirs — first run in a fresh consuming repo fails | MAJOR | **ACCEPT** | Fix: xreview + smart-plan instruct ensuring the dir exists first. |
+| 2 | progress.json reset per attempt — attempt 2 overwrites attempt 1's wedge diagnostics | MAJOR | **ACCEPT** | Fix: callVendor aggregates — each payload carries its attempt number + prior attempts' final snapshots; ai_job_status renders them. |
+| 3 | wedge env knobs unvalidated — NaN/Infinity degrade Node timers to ~1ms spins | MINOR | **ACCEPT** | Fix: finite-positive validation with fallback to defaults. |
+| 4 | skills/gpt + methodology still say 120s long-poll | MINOR | **ACCEPT** | Fix: synced to 300s. |
+| 5 | README/DESIGN say "two samples" while the implementation takes baseline + two (three samples, two deltas) | MINOR | **ACCEPT** | Fix: wording corrected in both. |
+
+Dispatch: all 5 fixed (orchestrator direct).

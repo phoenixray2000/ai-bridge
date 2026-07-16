@@ -60,8 +60,9 @@ Reliability:
   "running". agy's `--print-timeout` follows the job's `timeout_minutes`
   (it was a hardcoded 15m that silently killed long whole-batch reviews).
 - **wedge watchdog (lazy CPU probe)**: vendor stdout/stderr tees to
-  `<jobDir>/stdout.log`; after 10 min of silence the runner samples the vendor
-  process tree's CPU twice (5 min apart) — two flat deltas = dead connection →
+  `<jobDir>/stdout.log`; after 10 min of silence the runner takes a baseline
+  plus two follow-up CPU samples of the vendor process tree (three samples,
+  5 min apart) — both deltas flat = dead connection →
   kill + budget-bounded retry. Healthy path costs nothing; diagnostics land in
   `progress.json` (shown by `ai_job_status`). Knobs:
   `AI_BRIDGE_WEDGE_SILENCE_MS` / `AI_BRIDGE_WEDGE_PROBE_GAP_MS`.

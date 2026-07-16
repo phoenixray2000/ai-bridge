@@ -272,8 +272,17 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
     let wdState = watchdog ? "observing" : "off";
     let pollTimer = null;
     let lastProgressWrite = 0;
-    const silenceMs = watchdog?.silenceMs ?? Math.max(1, Number(process.env.AI_BRIDGE_WEDGE_SILENCE_MS ?? 600_000));
-    const probeGapMs = watchdog?.probeGapMs ?? Math.max(1, Number(process.env.AI_BRIDGE_WEDGE_PROBE_GAP_MS ?? 300_000));
+    // env knobs must be FINITE POSITIVE numbers — NaN/Infinity would degrade
+    // Node timers to ~1ms spins (CPU burn + instant wedge verdicts); an
+    // invalid value falls back to the default rather than a broken timer.
+    const envMs = (name, fallback) => {
+      const raw = process.env[name];
+      if (raw === undefined || raw === "") return fallback;
+      const v = Number(raw);
+      return Number.isFinite(v) && v >= 1 ? v : fallback;
+    };
+    const silenceMs = watchdog?.silenceMs ?? envMs("AI_BRIDGE_WEDGE_SILENCE_MS", 600_000);
+    const probeGapMs = watchdog?.probeGapMs ?? envMs("AI_BRIDGE_WEDGE_PROBE_GAP_MS", 300_000);
     const pollMs = watchdog?.pollMs ?? Math.min(30_000, Math.max(50, Math.floor(silenceMs / 4)));
     const emitProgress = (force = false) => {
       if (!watchdog?.onProgress) return;
@@ -670,8 +679,18 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     const backoffMs = Math.max(0, Number(process.env.AI_BRIDGE_AGY_BACKOFF_MS ?? 8000));
     let lastErr = "unknown";
     let attemptsRun = 0;
+    // progress.json is written fresh by each attempt's watchdog — without
+    // aggregation, attempt 2 would overwrite attempt 1's wedge diagnostics
+    // (the exact forensics #4c exists for). Each payload carries its attempt
+    // number plus the prior attempts' final snapshots.
+    const priorAttempts = [];
+    let lastAttemptProgress = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
+        if (lastAttemptProgress) {
+          priorAttempts.push(lastAttemptProgress);
+          lastAttemptProgress = null;
+        }
         if (deadline - Date.now() - backoffMs < MIN_RETRY_BUDGET_MS) {
           lastErr += `; job time budget (${Math.round(totalMs / 60000)}min) exhausted — not retrying`;
           break;
@@ -691,7 +710,15 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       const args = agyArgs({ role, prompt, effort, cwd, family, timeoutMs: remainingMs });
       commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
       const attemptSince = Date.now();
-      const r = await runImpl(agyBin(), args, { cwd, timeoutMs: remainingMs, teePath, watchdog });
+      const attemptWatchdog = onProgress
+        ? {
+            onProgress: (p) => {
+              lastAttemptProgress = { attempt, ...p };
+              onProgress({ attempt, ...p, ...(priorAttempts.length ? { priorAttempts } : {}) });
+            },
+          }
+        : watchdog;
+      const r = await runImpl(agyBin(), args, { cwd, timeoutMs: remainingMs, teePath, watchdog: attemptWatchdog });
       const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
       if (r.ok && r.stdout.trim() !== "") {
         // emptiness test trims BOTH ends (stdout itself keeps leading

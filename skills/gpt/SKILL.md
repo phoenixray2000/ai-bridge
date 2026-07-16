@@ -13,7 +13,7 @@ deliberately *not* the managed loop — one question, one answer, done.
 - Pure question / generation (no file writes) → `ai_review_start` with
   `vendor: "gpt"` (read-only *intent*; codex runs danger-full-access — the only
   working mode on Windows — with git as the safety net), then collect with
-  `ai_job_result` (long-polls 120s; a short call usually completes in one
+  `ai_job_result` (long-polls 300s; a short call usually completes in one
   collect — repeat while it reports running, never re-start). Repo material
   goes **by reference**: pass `cwd` + paths, never inline files (argv
   truncation); inline only a repo-less snippet.
