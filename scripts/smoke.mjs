@@ -13,7 +13,7 @@ import {
 } from "../src/vendors.mjs";
 import {
   startJob, readJob, readResult, waitJob, cancelJob, writeJson, markRunning, markTerminal,
-  listJobs, _setKillImplForTests,
+  listJobs, idempotencyKey, _setKillImplForTests,
 } from "../src/jobs.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -195,6 +195,20 @@ console.log("ok arg builders");
     assert.match(r.error, /materialize the diff/i);
   }
 
+  // #7a: the signature is permanent on a NONZERO exit too (same condition,
+  // different exit shape) — never a second cold start
+  {
+    const DENIED_CRASH = {
+      ok: false, exitCode: 1, stdout: "",
+      stderr: 'a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied',
+    };
+    let i = 0;
+    _setRunImplForTests(async () => { i++; return DENIED_CRASH; }, recoveryFails);
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "denied-2", effort: "high", timeoutMs: 300_000 });
+    assert.ok(!r.ok && r.degrade === true && i === 1, `nonzero-exit auto-denied must be permanent: attempts=${i} ${JSON.stringify(r)}`);
+    assert.match(r.error, /auto-denied/);
+  }
+
   // #7b: recovery returning a bare tool token is a recovery FAILURE → retry
   {
     let i = 0;
@@ -281,6 +295,19 @@ console.log("ok arg builders");
     assert.ok(r.ok && !r.wedged && r.stdout.includes("DONE"), `alive-CPU silence must survive to completion: ${JSON.stringify(r)}`);
   }
 
+  // NEGATIVE CPU delta (a child of the tree exited) is process activity, not
+  // death — must back off to observing, never count toward the wedge verdict
+  {
+    let n = 0;
+    _setCpuProbeImplForTests(async () => (n++ % 2 === 0 ? 50 : 20)); // every delta is a big NEGATIVE/positive swing
+    const r = await run(process.execPath, ["-e", "setTimeout(()=>{ console.log('SURVIVED'); }, 700)"], {
+      timeoutMs: 55_000,
+      watchdog: { silenceMs: 150, probeGapMs: 60, pollMs: 30, onProgress },
+    });
+    assert.ok(r.ok && !r.wedged && r.stdout.includes("SURVIVED"), `negative-delta probe must spare the vendor: ${JSON.stringify(r)}`);
+    assert.ok(n >= 2, "probe must actually have sampled");
+  }
+
   _setCpuProbeImplForTests(null);
   rmSync(tmp, { recursive: true, force: true });
   console.log("ok wedge watchdog (silent→killed, chatty→no probe, thinking→spared)");
@@ -315,6 +342,16 @@ console.log("ok arg builders");
   if (savedRoot === undefined) delete process.env.AI_BRIDGE_JOBS_ROOT; else process.env.AI_BRIDGE_JOBS_ROOT = savedRoot;
   rmSync(tmpRoot, { recursive: true, force: true });
   console.log("ok ai_job_list (3 fake jobs: order, fields, limit)");
+}
+
+// --- idempotency key cross-version stability (#6 fix) -------------------------
+{
+  const req = { kind: "review", vendor: "gpt", prompt: "key-stability", effort: "high", timeoutMs: 60000 };
+  // expect_verdict false/absent must hash byte-identically to a pre-0.14 request
+  // (in-flight jobs started by an older server stay recoverable across upgrade)
+  assert.equal(idempotencyKey(req), idempotencyKey({ ...req, expect_verdict: false }), "expect_verdict:false must not change the key");
+  assert.notEqual(idempotencyKey(req), idempotencyKey({ ...req, expect_verdict: true }), "expect_verdict:true must be a different run");
+  console.log("ok idempotency key cross-version stability");
 }
 
 // --- async job layer (offline: fake runner under an explicit env gate) -------
@@ -488,6 +525,16 @@ console.log("ok arg builders");
   });
   meta = await waitJob(ungated.jobId, 20000);
   assert.equal(meta.state, "completed", "expect_verdict unset → old behavior unchanged");
+
+  // leading whitespace on the VERDICT line is MALFORMED (the contract says
+  // the line is exactly `VERDICT: ...`)
+  const indented = startJob({
+    kind: "review", vendor: "gemini", prompt: "verdict-test-indented", effort: "high",
+    expect_verdict: true, timeoutMs: 60000,
+    fake: { delayMs: 0, result: { ok: true, output: "findings\n  VERDICT: GREEN", commandLine: "fake" } },
+  });
+  meta = await waitJob(indented.jobId, 20000);
+  assert.equal(meta.state, "failed", "indented VERDICT line must be rejected as malformed");
 
   // expect_verdict participates in the idempotency key: a gated re-send must
   // NOT dedupe onto a running UNGATED job with the same prompt

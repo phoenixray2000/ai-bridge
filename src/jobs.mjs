@@ -118,9 +118,11 @@ export function idempotencyKey(request) {
     resume: request.resume ?? null,
     evidence_path: request.evidence_path ?? null,
     report_path: request.report_path ?? null,
-    // different exit contract = different run (a verdict-gated review must not
-    // dedupe onto an ungated one, or vice versa)
-    expect_verdict: request.expect_verdict ?? false,
+    // Different exit contract = different run (a verdict-gated review must not
+    // dedupe onto an ungated one). Added CONDITIONALLY so expect_verdict:false /
+    // absent hashes byte-identically to pre-0.14 keys — an in-flight job started
+    // by an older server stays recoverable across the upgrade.
+    ...(request.expect_verdict ? { expect_verdict: true } : {}),
   });
   return createHash("sha256").update(material, "utf8").digest("hex");
 }

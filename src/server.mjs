@@ -95,16 +95,20 @@ server.tool(
   "ai_review_start",
   "Start a cross-vendor review as a DETACHED background job; returns a job_id " +
     "immediately (collect with ai_job_result). Review is BY REFERENCE: pass cwd = " +
-    "the repo; the prompt carries only INSTRUCTIONS + file paths / diff ranges / " +
-    "spec paths — NOT inlined code (argv-limit truncation). The reviewer reads " +
-    "files and runs git itself from cwd (codex: danger-full-access with git as " +
-    "safety net; agy: --sandbox read mode). Omit cwd ONLY for a repo-less snippet " +
-    "inlined in the prompt. evidence_path lands the raw output for the phase gate. " +
+    "the repo; the prompt carries only INSTRUCTIONS + file paths / spec paths — " +
+    "NOT inlined code (argv-limit truncation). VENDOR-SPECIFIC diff access: " +
+    "vendor=gpt runs git itself from cwd (danger-full-access, live diff range in " +
+    "the prompt is fine); vendor=gemini runs headless --sandbox where command " +
+    "tools are AUTO-DENIED — its prompt must reference a MATERIALIZED diff FILE " +
+    "(git diff <base>..<head> > file) and explicitly forbid running commands, or " +
+    "the review dies silently. Omit cwd ONLY for a repo-less snippet inlined in " +
+    "the prompt. evidence_path lands the raw output for the phase gate. " +
     "Idempotent: identical params while a job is still running return the ORIGINAL " +
     "job_id (a harness retry never double-launches a vendor).",
   {
     vendor: vendorSchema,
-    prompt: z.string().describe("Review instructions + file paths / diff ranges (NOT inlined code, when cwd is set)"),
+    prompt: z.string().describe("Review instructions + file paths (NOT inlined code, when cwd is set). " +
+      "gpt: may include a live diff range to run; gemini: reference a materialized diff file, forbid commands."),
     cwd: z.string().optional().describe("Repo the reviewer reads from (read-only). Omit only for repo-less snippets inlined in the prompt."),
     effort: effortSchema.default("high"),
     evidence_path: z.string().optional().describe("Absolute path; raw output is written here for the verify gate"),

@@ -98,11 +98,13 @@ async function main() {
     // A gated review must END with a machine-checkable verdict line, or it is
     // a FAILURE, never a completed job handing garbage to the arbitration.
     if (result.ok && request.expect_verdict) {
+      // Last non-empty line, RAW except the trailing EOL: the contract says the
+      // line is exactly `VERDICT: ...` — leading whitespace is malformed too.
       const last = String(result.output ?? "")
         .split(/\r?\n/)
         .reverse()
         .find((l) => l.trim() !== "")
-        ?.trim() ?? "";
+        ?.replace(/\s+$/, "") ?? "";
       if (!/^VERDICT: (GREEN|NEEDS-FIX|RED)$/.test(last)) {
         result = {
           ok: false,

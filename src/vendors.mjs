@@ -142,12 +142,16 @@ export function _setRunImplForTests(fn, recoverFn) {
 
 function killTree(child) {
   if (IS_WIN) {
-    try {
-      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-    } catch {
-      child.kill("SIGKILL");
-    }
+    // Synchronous + status-checked: the wedge watchdog and the timeout ceiling
+    // both depend on this kill actually landing — a fire-and-forget taskkill
+    // that silently failed would leave run() unresolved until the ceiling.
+    // 128 = process not found (already exited) — a successful outcome.
+    const r = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    if (r.error || (r.status !== 0 && r.status !== 128)) child.kill("SIGKILL"); // fallback: at least the root dies
   } else {
+    // POSIX: vendor children spawn without detached, so there is no separate
+    // process group to signal — root kill only (pre-existing; this bridge
+    // deploys on Windows).
     child.kill("SIGKILL");
   }
 }
@@ -287,9 +291,23 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
         /* progress reporting must never kill the run */
       }
     };
+    // Probe generation: a probe aborted by output must not interleave with a
+    // NEWER probe started later ("wdState === probing" alone can't tell whose
+    // probing it is). The gap sleep is CANCELABLE so a finished process doesn't
+    // hold the runner's event loop alive for up to probeGapMs (5min in prod).
+    let probeGen = 0;
+    let probeTimer = null;
+    let probeWake = null;
+    const probeSleep = (ms) =>
+      new Promise((res) => {
+        probeWake = res;
+        probeTimer = setTimeout(res, ms);
+      });
     const runProbe = async () => {
+      const gen = ++probeGen;
       wdState = "probing";
       emitProgress(true);
+      const stale = () => settled || wdState !== "probing" || gen !== probeGen;
       const sample = async () => {
         let s = null;
         try {
@@ -303,19 +321,23 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
       };
       const backOff = () => {
         // inconclusive or CPU-alive: NOT a wedge — return to silent observation
-        if (wdState === "probing") wdState = "observing";
+        if (wdState === "probing" && gen === probeGen) wdState = "observing";
         resumeAt = Date.now();
       };
       let prev = await sample();
-      if (settled || wdState !== "probing") return; // output arrived / process exited mid-probe
+      if (stale()) return; // output arrived / process exited / superseded mid-probe
       if (prev === null) return backOff();
       for (let i = 0; i < 2; i++) {
-        await new Promise((res) => setTimeout(res, probeGapMs));
-        if (settled || wdState !== "probing") return;
+        await probeSleep(probeGapMs);
+        if (stale()) return;
         const s = await sample();
-        if (settled || wdState !== "probing") return;
+        if (stale()) return;
         if (s === null) return backOff();
-        if (s - prev > 0.05) return backOff(); // CPU moved: server-side long thinking, leave it alone
+        // Only a delta within tolerance counts as FLAT. A significant move in
+        // EITHER direction is process activity — positive = CPU burn (server-
+        // side long thinking), negative = the tree changed shape (a child
+        // exited). Neither is evidence of a dead connection.
+        if (Math.abs(s - prev) > 0.05) return backOff();
         prev = s;
       }
       // two consecutive zero CPU deltas with silent stdout → dead connection
@@ -353,6 +375,10 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
       settled = true;
       clearTimeout(timer);
       if (pollTimer) clearInterval(pollTimer);
+      // wake + clear any in-flight probe gap sleep: a pending 5min setTimeout
+      // would keep the (already-resolved) runner process alive
+      if (probeTimer) clearTimeout(probeTimer);
+      if (probeWake) probeWake();
       emitProgress(true);
       resolve(result);
     };
@@ -635,6 +661,12 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
           break;
         }
         if (backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
+        // Re-check AFTER the backoff: a system sleep/suspend across it can eat
+        // the whole remainder — never start an attempt with no budget left.
+        if (deadline - Date.now() < MIN_RETRY_BUDGET_MS) {
+          lastErr += `; job time budget (${Math.round(totalMs / 60000)}min) exhausted during backoff — not retrying`;
+          break;
+        }
       }
       attemptsRun = attempt;
       const remainingMs = Math.max(1, deadline - Date.now());
@@ -648,21 +680,23 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       if (r.ok && r.stdout !== "") {
         return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
       }
+      // Non-success from here. The DIAGNOSIS lives on stderr — check it FIRST,
+      // regardless of exit code. Headless --sandbox auto-denies command-class
+      // tools; a prompt that asks the reviewer to run commands (git diff etc.)
+      // fails PERMANENTLY: no retry or store-recovery can ever help (batch-E
+      // burned 3 retries + a fake `run_command` "answer" on exactly this; the
+      // observed shape was exit 0 + empty stdout, but the signature means the
+      // same permanent condition whatever the exit code).
+      if (/auto-denied|required the "command" permission/.test(r.stderr ?? "")) {
+        return {
+          ok: false, commandLine, degrade: true,
+          error:
+            `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant).\n` +
+            `stderr: ${(r.stderr ?? "").trim().slice(0, 600)}\n` +
+            `Fix: materialize the diff to a file first (git diff <base>..<head> > docs/reviews/<label>-diff.txt) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
+        };
+      }
       if (r.ok) {
-        // exit 0 + empty stdout: the DIAGNOSIS lives on stderr — check it FIRST.
-        // Headless --sandbox auto-denies command-class tools; a prompt that asks
-        // the reviewer to run commands (git diff etc.) fails PERMANENTLY: no
-        // retry or store-recovery can ever help (batch-E burned 3 retries + a
-        // fake `run_command` "answer" on exactly this).
-        if (/auto-denied|required the "command" permission/.test(r.stderr ?? "")) {
-          return {
-            ok: false, commandLine, degrade: true,
-            error:
-              `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant).\n` +
-              `stderr: ${(r.stderr ?? "").trim().slice(0, 600)}\n` +
-              `Fix: materialize the diff to a file first (git diff <base>..<head> > docs/reviews/<label>-diff.txt) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
-          };
-        }
         // ONE cheap store-recovery check (probe shows it rarely has the answer —
         // the flake is an early failure, not a discarded completion — but the
         // single read is ~free, so try before re-calling).
