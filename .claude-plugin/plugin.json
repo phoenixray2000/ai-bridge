@@ -1,12 +1,19 @@
 {
   "name": "aibridge",
   "description": "Intelligent model routing for dev workflows: dispatch tasks/reviews/digests across GPT (codex), Gemini (agy), and Claude subagents by the model-selection methodology. Bundles the aibridge MCP server (async ai_review_start/ai_exec_start jobs + ai_digest) and seven routing skills. (No hyphen in the name: a hyphen breaks the slash-menu fuzzy match.)",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "author": {
     "name": "Ray"
   },
   "homepage": "https://github.com/phoenixray2000/ai-bridge",
   "repository": "https://github.com/phoenixray2000/ai-bridge",
   "license": "MIT",
-  "keywords": ["routing", "mcp", "codex", "gemini", "subagent", "model-selection"]
+  "keywords": [
+    "routing",
+    "mcp",
+    "codex",
+    "gemini",
+    "subagent",
+    "model-selection"
+  ]
 }
