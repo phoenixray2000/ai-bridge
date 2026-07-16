@@ -1,7 +1,7 @@
 // Vendor command construction + execution. Pure arg-builders are exported
 // separately from the runner so the smoke test can assert on them offline.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, appendFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import os from "node:os";
@@ -152,7 +152,85 @@ function killTree(child) {
   }
 }
 
-export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input } = {}) {
+// ---------------------------------------------------------------------------
+// Wedge watchdog: lazy CPU probe over the vendor process TREE.
+//
+// Failure mode (batch-E, 85min): agy holds a dead connection — zero stdout,
+// zero CPU — forever; the kill timer only fires at the full timeout ceiling,
+// and diagnosis needed MANUAL CPU sampling. The watchdog automates exactly
+// that diagnosis, lazily: the healthy path costs nothing (in-memory time
+// comparison); only after silenceMs of NO output does it take CPU samples
+// (probeGapMs apart), and only two consecutive ZERO deltas kill the vendor.
+// Honest boundary: "server-side long thinking" vs "dead connection" is a
+// heuristic — a false kill costs one budget-bounded retry (#5), a miss falls
+// back to the timeout ceiling; both are bounded.
+// ---------------------------------------------------------------------------
+async function realCpuProbe(rootPid) {
+  // One-shot listing of every process (pid, ppid, cpuSeconds); the tree sum is
+  // computed here — the vendor may do its real work in a child process.
+  const list = (bin, args) =>
+    new Promise((res) => {
+      let out = "";
+      let c;
+      try {
+        c = spawn(bin, args, { windowsHide: true });
+      } catch {
+        res("");
+        return;
+      }
+      c.stdout.setEncoding("utf8");
+      c.stdout.on("data", (d) => (out += d));
+      c.on("error", () => res(""));
+      c.on("close", () => res(out));
+    });
+  const rows = [];
+  if (IS_WIN) {
+    const out = await list("powershell", [
+      "-NoProfile", "-Command",
+      "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2} {3}' -f $_.ProcessId, $_.ParentProcessId, $_.KernelModeTime, $_.UserModeTime }",
+    ]);
+    for (const line of out.split("\n")) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length !== 4) continue;
+      const [pid, ppid, k, u] = parts.map(Number);
+      if (!Number.isFinite(pid) || !Number.isFinite(k) || !Number.isFinite(u)) continue;
+      rows.push({ pid, ppid, seconds: (k + u) / 1e7 }); // Kernel/UserModeTime are 100ns units
+    }
+  } else {
+    const out = await list("ps", ["-ax", "-o", "pid=,ppid=,time="]);
+    for (const line of out.split("\n")) {
+      const m = line.trim().match(/^(\d+)\s+(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)/);
+      if (!m) continue;
+      const [, pid, ppid, dd, hh, mm, ss] = m;
+      rows.push({ pid: Number(pid), ppid: Number(ppid), seconds: (Number(dd ?? 0) * 24 + Number(hh ?? 0)) * 3600 + Number(mm) * 60 + Number(ss) });
+    }
+  }
+  const cpu = new Map();
+  const byParent = new Map();
+  for (const { pid, ppid, seconds } of rows) {
+    cpu.set(pid, seconds);
+    if (!byParent.has(ppid)) byParent.set(ppid, []);
+    byParent.get(ppid).push(pid);
+  }
+  if (!cpu.has(rootPid)) return null; // root gone / listing failed → probe inconclusive, never a kill verdict
+  let total = 0;
+  const queue = [rootPid];
+  const seen = new Set();
+  while (queue.length) {
+    const p = queue.pop();
+    if (seen.has(p)) continue;
+    seen.add(p);
+    total += cpu.get(p) ?? 0;
+    for (const c of byParent.get(p) ?? []) queue.push(c);
+  }
+  return total;
+}
+let cpuProbeImpl = realCpuProbe;
+export function _setCpuProbeImplForTests(fn) {
+  cpuProbeImpl = fn ?? realCpuProbe;
+}
+
+export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, teePath, watchdog } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
@@ -175,22 +253,127 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input } = 
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let wedged = false;
+    let settled = false;
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child);
     }, timeoutMs);
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", (error) => {
+
+    // --- wedge watchdog (enabled only when the caller passes `watchdog`) ----
+    let lastOutputAt = Date.now();
+    let resumeAt = Date.now(); // observation restarts here after an inconclusive/alive probe
+    let outBytes = 0;
+    const cpuSamples = [];
+    let wdState = watchdog ? "observing" : "off";
+    let pollTimer = null;
+    let lastProgressWrite = 0;
+    const silenceMs = watchdog?.silenceMs ?? Math.max(1, Number(process.env.AI_BRIDGE_WEDGE_SILENCE_MS ?? 600_000));
+    const probeGapMs = watchdog?.probeGapMs ?? Math.max(1, Number(process.env.AI_BRIDGE_WEDGE_PROBE_GAP_MS ?? 300_000));
+    const pollMs = watchdog?.pollMs ?? Math.min(30_000, Math.max(50, Math.floor(silenceMs / 4)));
+    const emitProgress = (force = false) => {
+      if (!watchdog?.onProgress) return;
+      const now = Date.now();
+      if (!force && now - lastProgressWrite < 2000) return; // throttle: milestones + 2s cadence, not per-chunk
+      lastProgressWrite = now;
+      try {
+        watchdog.onProgress({
+          lastOutputAt: new Date(lastOutputAt).toISOString(),
+          stdoutBytes: outBytes,
+          cpuSamples: cpuSamples.slice(-6),
+          watchdog: wdState,
+        });
+      } catch {
+        /* progress reporting must never kill the run */
+      }
+    };
+    const runProbe = async () => {
+      wdState = "probing";
+      emitProgress(true);
+      const sample = async () => {
+        let s = null;
+        try {
+          s = await cpuProbeImpl(child.pid);
+        } catch {
+          s = null;
+        }
+        cpuSamples.push({ at: new Date().toISOString(), cpuSeconds: s });
+        emitProgress(true);
+        return s;
+      };
+      const backOff = () => {
+        // inconclusive or CPU-alive: NOT a wedge — return to silent observation
+        if (wdState === "probing") wdState = "observing";
+        resumeAt = Date.now();
+      };
+      let prev = await sample();
+      if (settled || wdState !== "probing") return; // output arrived / process exited mid-probe
+      if (prev === null) return backOff();
+      for (let i = 0; i < 2; i++) {
+        await new Promise((res) => setTimeout(res, probeGapMs));
+        if (settled || wdState !== "probing") return;
+        const s = await sample();
+        if (settled || wdState !== "probing") return;
+        if (s === null) return backOff();
+        if (s - prev > 0.05) return backOff(); // CPU moved: server-side long thinking, leave it alone
+        prev = s;
+      }
+      // two consecutive zero CPU deltas with silent stdout → dead connection
+      wdState = "wedged";
+      wedged = true;
+      emitProgress(true);
+      killTree(child);
+    };
+    if (watchdog) {
+      pollTimer = setInterval(() => {
+        if (wdState !== "observing") return;
+        if (Date.now() - Math.max(lastOutputAt, resumeAt) >= silenceMs) runProbe();
+        else emitProgress();
+      }, pollMs);
+    }
+    const onOutput = (d) => {
+      lastOutputAt = Date.now();
+      outBytes += Buffer.byteLength(d);
+      if (teePath) {
+        try {
+          appendFileSync(teePath, d);
+        } catch {
+          /* tee is diagnostics, never fatal */
+        }
+      }
+      if (wdState === "probing") {
+        // output arrived mid-probe: the vendor is alive — abort the probe
+        wdState = "observing";
+        resumeAt = Date.now();
+      }
+      emitProgress();
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve({ ok: false, exitCode: null, stdout, stderr: stderr + String(error) });
+      if (pollTimer) clearInterval(pollTimer);
+      emitProgress(true);
+      resolve(result);
+    };
+
+    child.stdout.on("data", (d) => {
+      stdout += d;
+      onOutput(d);
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+      onOutput(d);
+    });
+    child.on("error", (error) => {
+      finish({ ok: false, exitCode: null, stdout, stderr: stderr + String(error) });
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        ok: !timedOut && code === 0,
+      finish({
+        ok: !timedOut && !wedged && code === 0,
         exitCode: code,
         timedOut,
+        wedged,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
       });
@@ -351,6 +534,19 @@ function readTranscriptAnswer(convId) {
   return answer;
 }
 
+// Plausibility floor for RECOVERED answers (batch-E: recovery fished the
+// literal denied-tool token `run_command` out of the session store and passed
+// it off as the review — isNoise only blocks 16-30 char opaque tokens, an
+// 11-char snake_case name sailed through). A short REAL answer being rejected
+// here just falls back to the normal retry — acceptable cost.
+export function isImplausibleRecoveredAnswer(answer) {
+  const t = String(answer ?? "").trim();
+  if (!t) return true;
+  if (t.length < 40 && !/\s/.test(t)) return true; // bare short token (tool names, ids)
+  if (/^[a-z_]+$/.test(t)) return true; // snake_case single token of any length
+  return false;
+}
+
 export function recoverAgyAnswer({ since, prompt }) {
   const convId = newestConversationSince(since);
   if (!convId) {
@@ -369,14 +565,17 @@ export function recoverAgyAnswer({ since, prompt }) {
 // ---------------------------------------------------------------------------
 // High-level vendor calls
 // ---------------------------------------------------------------------------
-export async function callVendor({ vendor, role, prompt, effort, cwd, family, timeoutMs, resume }) {
+export async function callVendor({ vendor, role, prompt, effort, cwd, family, timeoutMs, resume, teePath, onProgress }) {
+  // Watchdog + tee are enabled by the detached runner (which passes teePath /
+  // onProgress); direct synchronous calls (digest) skip them.
+  const watchdog = onProgress ? { onProgress } : teePath ? {} : undefined;
   let result;
   let commandLine;
   if (vendor === "gpt") {
     const args = codexArgs({ effort, resume });
     commandLine = `codex ${args.join(" ")} <stdin-prompt>${cwd ? ` (cwd=${cwd})` : ""}`;
     // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
-    result = await runImpl(codexBin(), args, { cwd, timeoutMs, input: prompt });
+    result = await runImpl(codexBin(), args, { cwd, timeoutMs, input: prompt, teePath, watchdog });
     if (result.ok) {
       const parsed = parseCodexJson(result.stdout);
       // We always pass --json; no parseable events means something is wrong
@@ -413,8 +612,14 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // persistent session would auth once but POLLUTE context — rejected. The only
     // deterministic escalation is a PTY (one-shot + fake TTY: no drip, still clean
     // context, no cluster), gated behind a native dep — not done here.
-    const args = agyArgs({ role, prompt, effort, cwd, family, timeoutMs });
-    commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
+    // timeoutMs is a JOB-LEVEL BUDGET, not per-attempt (a per-attempt timer let
+    // attempt 1 burn the full 90min, exit 0 empty, and attempt 2 burn ANOTHER
+    // 90min — 180min against the user's 90min intuition). Every attempt gets
+    // the REMAINING budget; under MIN_RETRY_BUDGET_MS we fail instead of
+    // retrying. Watchdog kills (#4) consume the same budget by construction.
+    const totalMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadline = Date.now() + totalMs;
+    const MIN_RETRY_BUDGET_MS = 60_000;
     const maxAttempts = Math.max(1, Number(process.env.AI_BRIDGE_AGY_ATTEMPTS ?? 2));
     // LONG backoff before a retry: the first process must have fully exited and
     // released keyring/auth so the retry is a de-clustered normal-cadence call, not a
@@ -422,20 +627,52 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // clustering that provokes browser OAuth.
     const backoffMs = Math.max(0, Number(process.env.AI_BRIDGE_AGY_BACKOFF_MS ?? 8000));
     let lastErr = "unknown";
+    let attemptsRun = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      if (attempt > 1 && backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
+      if (attempt > 1) {
+        if (deadline - Date.now() - backoffMs < MIN_RETRY_BUDGET_MS) {
+          lastErr += `; job time budget (${Math.round(totalMs / 60000)}min) exhausted — not retrying`;
+          break;
+        }
+        if (backoffMs > 0) await new Promise((res) => setTimeout(res, backoffMs));
+      }
+      attemptsRun = attempt;
+      const remainingMs = Math.max(1, deadline - Date.now());
+      // args are rebuilt per attempt so agy's own --print-timeout follows the
+      // REMAINING budget, not the original total.
+      const args = agyArgs({ role, prompt, effort, cwd, family, timeoutMs: remainingMs });
+      commandLine = `agy ${args.slice(0, -1).join(" ")} <prompt>`;
       const attemptSince = Date.now();
-      const r = await runImpl(agyBin(), args, { cwd, timeoutMs });
+      const r = await runImpl(agyBin(), args, { cwd, timeoutMs: remainingMs, teePath, watchdog });
       const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
       if (r.ok && r.stdout !== "") {
         return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
       }
       if (r.ok) {
-        // exit 0 + empty stdout: ONE cheap store-recovery check (probe shows it
-        // rarely has the answer — the flake is an early failure, not a discarded
-        // completion — but the single read is ~free, so try before re-calling).
+        // exit 0 + empty stdout: the DIAGNOSIS lives on stderr — check it FIRST.
+        // Headless --sandbox auto-denies command-class tools; a prompt that asks
+        // the reviewer to run commands (git diff etc.) fails PERMANENTLY: no
+        // retry or store-recovery can ever help (batch-E burned 3 retries + a
+        // fake `run_command` "answer" on exactly this).
+        if (/auto-denied|required the "command" permission/.test(r.stderr ?? "")) {
+          return {
+            ok: false, commandLine, degrade: true,
+            error:
+              `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant).\n` +
+              `stderr: ${(r.stderr ?? "").trim().slice(0, 600)}\n` +
+              `Fix: materialize the diff to a file first (git diff <base>..<head> > docs/reviews/<label>-diff.txt) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
+          };
+        }
+        // ONE cheap store-recovery check (probe shows it rarely has the answer —
+        // the flake is an early failure, not a discarded completion — but the
+        // single read is ~free, so try before re-calling).
         try {
           const recovered = recoverImpl({ since: attemptSince, prompt });
+          // Plausibility floor: the store also contains denied-tool names and
+          // ids; a bare token is NOT an answer (treat as recovery failure → retry).
+          if (isImplausibleRecoveredAnswer(recovered.answer)) {
+            throw new Error(`recovered candidate rejected as implausible: "${String(recovered.answer).trim().slice(0, 60)}"`);
+          }
           return { ok: true, commandLine, output: recovered.answer, note: `answer recovered from ${recovered.source}${tag}` };
         } catch (error) {
           lastErr = `empty stdout + recovery failed: ${error?.message ?? error}`;
@@ -443,13 +680,17 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
         }
       }
       if (r.timedOut) {
-        lastErr = `timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`;
-        break; // do NOT retry a full timeout
+        lastErr = `timed out after ${remainingMs} ms (job budget ${totalMs} ms)`;
+        break; // do NOT retry a full timeout — the budget is gone by definition
+      }
+      if (r.wedged) {
+        lastErr = "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)";
+        continue; // retryable, bounded by the remaining job budget
       }
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
       // fast crash / transient re-login → retryable
     }
-    return { ok: false, commandLine, degrade: true, error: `agy failed after ${maxAttempts} gentle attempt(s): ${lastErr}. SKIP this Gemini seat for the round (GPT anchors; note Gemini absent in the verdict) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent) and do NOT seat-swap. Inspect ${path.join(AGY_HOME, "conversations")}` };
+    return { ok: false, commandLine, degrade: true, error: `agy failed after ${attemptsRun} gentle attempt(s): ${lastErr}. SKIP this Gemini seat for the round (GPT anchors; note Gemini absent in the verdict) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent) and do NOT seat-swap. Inspect ${path.join(AGY_HOME, "conversations")}` };
   }
 
   // gpt-only from here (the gemini branch returns in all paths above).
@@ -457,9 +698,11 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     return {
       ok: false,
       commandLine,
-      error: result.timedOut
-        ? `timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`
-        : `exit code ${result.exitCode}`,
+      error: result.wedged
+        ? "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)"
+        : result.timedOut
+          ? `timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`
+          : `exit code ${result.exitCode}`,
       stderr: result.stderr,
       stdout: result.stdout,
     };

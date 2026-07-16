@@ -68,9 +68,21 @@ async function main() {
         family: request.family,
         resume: request.resume,
         timeoutMs: request.timeoutMs,
+        // diagnostics: vendor output tees to stdout.log; the wedge watchdog's
+        // milestones land in progress.json (surfaced by ai_job_status)
+        teePath: path.join(jobDirArg, "stdout.log"),
+        onProgress: (p) => {
+          try {
+            writeJson(path.join(jobDirArg, "progress.json"), p);
+          } catch {
+            /* diagnostics must never kill the run */
+          }
+        },
       });
     }
 
+    // Evidence lands BEFORE the verdict-contract check below — a malformed
+    // review still leaves its raw output on disk for forensics.
     if (result.ok && request.evidence_path) {
       writeEvidence(request.evidence_path, {
         vendor: request.vendor,
@@ -79,6 +91,29 @@ async function main() {
         commandLine: result.commandLine,
         output: result.output,
       });
+    }
+
+    // VERDICT exit contract (review gates): exit 0 + non-empty is NOT proof of
+    // a review — batch-E marked the literal token `run_command` as completed.
+    // A gated review must END with a machine-checkable verdict line, or it is
+    // a FAILURE, never a completed job handing garbage to the arbitration.
+    if (result.ok && request.expect_verdict) {
+      const last = String(result.output ?? "")
+        .split(/\r?\n/)
+        .reverse()
+        .find((l) => l.trim() !== "")
+        ?.trim() ?? "";
+      if (!/^VERDICT: (GREEN|NEEDS-FIX|RED)$/.test(last)) {
+        result = {
+          ok: false,
+          commandLine: result.commandLine,
+          error:
+            `review output is MALFORMED: expect_verdict requires the last non-empty line to match ` +
+            `"VERDICT: GREEN|NEEDS-FIX|RED", got: "${last.slice(0, 120)}". The output was NOT accepted as a review.` +
+            (request.evidence_path ? ` Raw output kept at ${request.evidence_path} for forensics.` : "") +
+            ` Re-run with the OUTPUT CONTRACT appended to the prompt; for Gemini/agy, reference a materialized diff file and forbid running commands.`,
+        };
+      }
     }
     // result.json MUST land before the completed marker — a job may never read
     // as completed with no result (writeJson throws on final failure and the

@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { callVendor, embedFiles, assertSafeExecCwd, DEFAULT_TIMEOUT_MS } from "./vendors.mjs";
-import { startJob, readJob, readResult, waitJob, cancelJob, isTerminal, jobsRoot, findRunning, readRequest } from "./jobs.mjs";
+import { startJob, readJob, readResult, waitJob, cancelJob, isTerminal, jobsRoot, findRunning, readRequest, listJobs } from "./jobs.mjs";
 
 // Version derives from package.json (single source — release bumps land here too).
 const pkg = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"));
@@ -108,12 +108,20 @@ server.tool(
     cwd: z.string().optional().describe("Repo the reviewer reads from (read-only). Omit only for repo-less snippets inlined in the prompt."),
     effort: effortSchema.default("high"),
     evidence_path: z.string().optional().describe("Absolute path; raw output is written here for the verify gate"),
+    expect_verdict: z.boolean().default(false)
+      .describe("Gate reviews (xreview/smart-plan) MUST pass true: the job only completes if the " +
+        "last non-empty output line matches 'VERDICT: GREEN|NEEDS-FIX|RED'; malformed output fails " +
+        "the job (evidence still written) instead of completing with garbage. Leave false for " +
+        "ad-hoc one-shot opinions."),
     timeout_minutes: z.number().int().min(1).max(240).optional()
-      .describe("Vendor kill timer (default 25). Raise for whole-batch / cutover diffs (e.g. 60)."),
+      .describe("JOB-LEVEL time budget in minutes (default 25) — retries spend the remainder, never " +
+        "restart the clock. Regular phase/plan review: omit. Closing-gate whole-diff: 90. Huge batch " +
+        "(≥100 files / ≥50 commits) or irreversible-cutover xhigh: 120-180. When unsure take the larger " +
+        "tier — an oversized ceiling costs nothing, an undersized one kills a legitimate long review."),
   },
-  guarded(async ({ vendor, prompt, cwd, effort, evidence_path, timeout_minutes }) => {
+  guarded(async ({ vendor, prompt, cwd, effort, evidence_path, expect_verdict, timeout_minutes }) => {
     const request = {
-      kind: "review", vendor, prompt, cwd, effort, evidence_path,
+      kind: "review", vendor, prompt, cwd, effort, evidence_path, expect_verdict,
       timeoutMs: (timeout_minutes ? timeout_minutes * 60 : DEFAULT_TIMEOUT_MS / 1000) * 1000,
     };
     return startedText(startJob(request), request);
@@ -172,10 +180,30 @@ server.tool(
   }),
 );
 
+// Liveness diagnostics from the runner's progress.json (#4c): last-output age,
+// stdout volume, CPU-probe activity, watchdog verdict — the panel that made the
+// 85min wedged agy diagnosable only by MANUAL CPU sampling.
+function progressText(jobId) {
+  let p;
+  try {
+    p = JSON.parse(readFileSync(path.join(jobsRoot(), jobId, "progress.json"), "utf8"));
+  } catch {
+    return "";
+  }
+  const lines = [];
+  const age = p.lastOutputAt ? Math.round((Date.now() - Date.parse(p.lastOutputAt)) / 1000) : null;
+  lines.push(`last output: ${age === null ? "never" : `${age}s ago`} | stdout: ${p.stdoutBytes ?? 0} bytes | watchdog: ${p.watchdog ?? "off"}`);
+  if (p.cpuSamples?.length) {
+    lines.push(`cpu samples: ${p.cpuSamples.map((s) => (s.cpuSeconds === null ? "?" : `${Number(s.cpuSeconds).toFixed(1)}s`)).join(" → ")}`);
+  }
+  return `\n${lines.join("\n")}`;
+}
+
 server.tool(
   "ai_job_status",
   "Instant state of a background job: starting/running/completed/failed/cancelled " +
-    "+ elapsed seconds. A job whose runner died without finishing is reported as " +
+    "+ elapsed seconds + liveness diagnostics (last-output age, stdout bytes, CPU-probe " +
+    "watchdog state). A job whose runner died without finishing is reported as " +
     "FAILED here (never eternal 'running'). Works across sessions — jobs live on " +
     `disk (${jobsRoot()}).`,
   { job_id: z.string() },
@@ -184,15 +212,40 @@ server.tool(
     if (!meta) return textResult(`unknown job: ${job_id}`, true);
     return textResult(
       `job ${meta.id}: ${meta.state} (kind=${meta.kind} vendor=${meta.vendor}, elapsed ${elapsedSeconds(meta)}s)` +
-        (isTerminal(meta.state) ? "\nnext: ai_job_result to collect the output" : ""),
+        (isTerminal(meta.state) ? "\nnext: ai_job_result to collect the output" : progressText(meta.id)),
     );
   }),
 );
 
 server.tool(
+  "ai_job_list",
+  "List recent background jobs (newest first) — the cross-session recovery path: " +
+    "after a session crash/compaction the job_id from the old context is gone, and " +
+    "a re-phrased re-send misses the idempotency key and double-launches the vendor. " +
+    "FIND the original job here first; collect it with ai_job_result.",
+  { limit: z.number().int().min(1).max(100).default(20) },
+  guarded(async ({ limit }) => {
+    const jobs = listJobs({ limit });
+    if (!jobs.length) return textResult(`no jobs under ${jobsRoot()}`);
+    const lines = jobs.map((j) => {
+      if (j.state === "unreadable") return `${j.id}  UNREADABLE: ${j.error}`;
+      const paths = [
+        j.evidence_path ? `evidence=${j.evidence_path}` : null,
+        j.report_path ? `report=${j.report_path}` : null,
+      ].filter(Boolean);
+      return `${j.id}  ${j.state}  kind=${j.kind} vendor=${j.vendor} started=${j.started_at}` +
+        (j.finished_at ? ` finished=${j.finished_at}` : "") +
+        (paths.length ? `\n    ${paths.join(" ")}` : "");
+    });
+    return textResult(lines.join("\n"));
+  }),
+);
+
+server.tool(
   "ai_job_result",
-  "Collect a job's result, LONG-POLLING up to wait_seconds (default 120) so a " +
-    "short run completes within one call. If still running at the deadline it " +
+  "Collect a job's result, LONG-POLLING up to wait_seconds (default 300 — early " +
+    "return makes a large window free for short runs) so a short run completes " +
+    "within one call. If still running at the deadline it " +
     "returns a non-error 'running' line — call ai_job_result again (do NOT " +
     "re-start the job; the idempotency key would catch it, but the correct move " +
     "is simply to keep collecting). Terminal results are stable and re-readable " +
@@ -201,7 +254,7 @@ server.tool(
     "structured failure (agy failures carry the degrade/skip-seat guidance).",
   {
     job_id: z.string(),
-    wait_seconds: z.number().int().min(0).max(600).default(120),
+    wait_seconds: z.number().int().min(0).max(600).default(300),
   },
   guarded(async ({ job_id, wait_seconds }) => {
     const meta = await waitJob(job_id, wait_seconds * 1000);

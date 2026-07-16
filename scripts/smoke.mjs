@@ -7,8 +7,14 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codexArgs, agyArgs, geminiModel, callVendor, parseCodexJson, _setRunImplForTests } from "../src/vendors.mjs";
-import { startJob, readJob, readResult, waitJob, cancelJob, writeJson, markRunning, markTerminal, _setKillImplForTests } from "../src/jobs.mjs";
+import {
+  codexArgs, agyArgs, geminiModel, callVendor, parseCodexJson, run,
+  isImplausibleRecoveredAnswer, _setRunImplForTests, _setCpuProbeImplForTests,
+} from "../src/vendors.mjs";
+import {
+  startJob, readJob, readResult, waitJob, cancelJob, writeJson, markRunning, markTerminal,
+  listJobs, _setKillImplForTests,
+} from "../src/jobs.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const live = process.argv.includes("--live");
@@ -75,7 +81,9 @@ console.log("ok arg builders");
   process.env.AI_BRIDGE_AGY_ATTEMPTS = "2";
   process.env.AI_BRIDGE_AGY_BACKOFF_MS = "0"; // keep the test fast
   const recoveryFails = () => { throw new Error("no conversation (test stub)"); };
-  const base = { vendor: "gemini", role: "review", prompt: "policy-test", effort: "high", timeoutMs: 1000 };
+  // timeoutMs is now a JOB-LEVEL budget (#5): keep it well above the 60s
+  // retry floor so this block tests the RETRY POLICY, not budget exhaustion.
+  const base = { vendor: "gemini", role: "review", prompt: "policy-test", effort: "high", timeoutMs: 300_000 };
   const seq = (results) => {
     let i = 0;
     _setRunImplForTests(async () => results[Math.min(i++, results.length - 1)], recoveryFails);
@@ -119,6 +127,194 @@ console.log("ok arg builders");
   if (savedEnv.A === undefined) delete process.env.AI_BRIDGE_AGY_ATTEMPTS; else process.env.AI_BRIDGE_AGY_ATTEMPTS = savedEnv.A;
   if (savedEnv.B === undefined) delete process.env.AI_BRIDGE_AGY_BACKOFF_MS; else process.env.AI_BRIDGE_AGY_BACKOFF_MS = savedEnv.B;
   console.log("ok agy retry/degrade policy (offline, store-isolated)");
+}
+
+// --- job-level time budget + stderr signature + recovery plausibility --------
+{
+  const savedEnv = { A: process.env.AI_BRIDGE_AGY_ATTEMPTS, B: process.env.AI_BRIDGE_AGY_BACKOFF_MS };
+  process.env.AI_BRIDGE_AGY_ATTEMPTS = "2";
+  process.env.AI_BRIDGE_AGY_BACKOFF_MS = "0";
+  const recoveryFails = () => { throw new Error("no conversation (test stub)"); };
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const OK = { ok: true, exitCode: 0, stdout: "ANSWER", stderr: "" };
+  const EMPTY = { ok: true, exitCode: 0, stdout: "", stderr: "" };
+
+  // #5 budget: attempt 2 gets the REMAINING budget, never the full amount again
+  {
+    const seen = [];
+    let i = 0;
+    const rs = [EMPTY, OK];
+    _setRunImplForTests(async (bin, args, opts) => {
+      seen.push(opts.timeoutMs);
+      await sleep(150);
+      return rs[Math.min(i++, rs.length - 1)];
+    }, recoveryFails);
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "budget-1", effort: "high", timeoutMs: 120_000 });
+    assert.ok(r.ok && i === 2, `budget retry must still run: ${JSON.stringify(r)}`);
+    assert.ok(seen[0] >= 119_000, `attempt 1 gets ~the full budget, got ${seen[0]}`);
+    assert.ok(seen[1] < seen[0] && seen[1] > seen[0] - 10_000, `attempt 2 must get the REMAINDER (got ${seen[1]} after ${seen[0]})`);
+  }
+
+  // #5 budget: remaining < 60s → no retry, fail with the budget explanation
+  {
+    let i = 0;
+    _setRunImplForTests(async () => {
+      i++;
+      await sleep(120);
+      return EMPTY;
+    }, recoveryFails);
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "budget-2", effort: "high", timeoutMs: 60_050 });
+    assert.ok(!r.ok && i === 1, `must not retry on an exhausted budget (attempts=${i}): ${JSON.stringify(r)}`);
+    assert.match(r.error, /budget.*exhausted/s);
+  }
+
+  // #4/#5: a watchdog kill is a RETRYABLE failure (budget-bounded)
+  {
+    const WEDGED = { ok: false, exitCode: 1, stdout: "", stderr: "", wedged: true };
+    let i = 0;
+    const rs = [WEDGED, OK];
+    _setRunImplForTests(async () => rs[Math.min(i++, rs.length - 1)], recoveryFails);
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "wedge-retry", effort: "high", timeoutMs: 300_000 });
+    assert.ok(r.ok && i === 2, `wedge kill must retry within budget: ${JSON.stringify(r)}`);
+  }
+
+  // #7a: auto-denied signature on stderr → PERMANENT failure, ONE attempt, no recovery
+  {
+    const DENIED = {
+      ok: true, exitCode: 0, stdout: "",
+      stderr: 'Error: a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied',
+    };
+    let i = 0;
+    let recoveries = 0;
+    _setRunImplForTests(async () => { i++; return DENIED; }, () => { recoveries++; return { answer: "x", source: "db" }; });
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "denied-1", effort: "high", timeoutMs: 300_000 });
+    assert.ok(!r.ok && r.degrade === true, `auto-denied must fail with degrade: ${JSON.stringify(r)}`);
+    assert.equal(i, 1, "auto-denied is PERMANENT — exactly one attempt");
+    assert.equal(recoveries, 0, "auto-denied must not attempt store recovery");
+    assert.match(r.error, /auto-denied/);
+    assert.match(r.error, /materialize the diff/i);
+  }
+
+  // #7b: recovery returning a bare tool token is a recovery FAILURE → retry
+  {
+    let i = 0;
+    const rs = [EMPTY, OK];
+    _setRunImplForTests(
+      async () => rs[Math.min(i++, rs.length - 1)],
+      () => ({ answer: "run_command", source: "db", convId: "t" }),
+    );
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "implausible-1", effort: "high", timeoutMs: 300_000 });
+    assert.ok(r.ok && r.output === "ANSWER" && i === 2, `bare-token recovery must be rejected → retry: ${JSON.stringify(r)}`);
+    assert.match(r.note ?? "", /retry/);
+  }
+
+  // #7b: a plausible recovered answer still recovers (the channel is not dead)
+  {
+    let i = 0;
+    _setRunImplForTests(
+      async () => { i++; return EMPTY; },
+      () => ({ answer: "This is a real recovered review answer, long enough and with whitespace.", source: "transcript", convId: "t" }),
+    );
+    const r = await callVendor({ vendor: "gemini", role: "review", prompt: "plausible-1", effort: "high", timeoutMs: 300_000 });
+    assert.ok(r.ok && i === 1 && /recovered from transcript/.test(r.note ?? ""), `plausible recovery must work: ${JSON.stringify(r)}`);
+  }
+
+  // plausibility floor unit checks
+  assert.ok(isImplausibleRecoveredAnswer("run_command"));
+  assert.ok(isImplausibleRecoveredAnswer("some_very_long_snake_case_single_token_that_exceeds_forty_characters"));
+  assert.ok(isImplausibleRecoveredAnswer(""));
+  assert.ok(!isImplausibleRecoveredAnswer("No findings.\nVERDICT: GREEN")); // short but real-shaped (has whitespace, len ok? — whitespace present)
+  assert.ok(!isImplausibleRecoveredAnswer("A real answer with spaces that is comfortably long enough to pass the floor."));
+
+  _setRunImplForTests(null, null);
+  if (savedEnv.A === undefined) delete process.env.AI_BRIDGE_AGY_ATTEMPTS; else process.env.AI_BRIDGE_AGY_ATTEMPTS = savedEnv.A;
+  if (savedEnv.B === undefined) delete process.env.AI_BRIDGE_AGY_BACKOFF_MS; else process.env.AI_BRIDGE_AGY_BACKOFF_MS = savedEnv.B;
+  console.log("ok job budget + stderr signature + recovery plausibility (offline)");
+}
+
+// --- wedge watchdog (offline: real child processes, fake CPU probe) ----------
+{
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "ai-bridge-wd-"));
+  const progressEvents = [];
+  const onProgress = (p) => progressEvents.push(p);
+
+  // silent vendor + flat CPU → watchdog kills it well before the timeout ceiling
+  {
+    let probes = 0;
+    _setCpuProbeImplForTests(async () => { probes++; return 5; }); // flat CPU
+    const teePath = path.join(tmp, "wedge-stdout.log");
+    const t0 = Date.now();
+    const r = await run(process.execPath, ["-e", "setTimeout(()=>{}, 60000)"], {
+      timeoutMs: 55_000, teePath,
+      watchdog: { silenceMs: 300, probeGapMs: 100, pollMs: 50, onProgress },
+    });
+    assert.ok(r.wedged === true && r.ok === false, `silent+flat-CPU must be killed as wedged: ${JSON.stringify(r)}`);
+    assert.ok(Date.now() - t0 < 30_000, "wedge kill must fire long before the timeout ceiling");
+    assert.ok(probes >= 3, `needs 3 samples (2 zero deltas) before the kill, got ${probes}`);
+    const wedgedEvent = progressEvents.find((p) => p.watchdog === "wedged");
+    assert.ok(wedgedEvent, "progress must record the wedged verdict");
+    assert.ok(wedgedEvent.cpuSamples.length >= 2, "progress must carry the CPU samples");
+  }
+
+  // vendor that KEEPS TALKING → the probe never starts
+  {
+    let probes = 0;
+    _setCpuProbeImplForTests(async () => { probes++; return 5; });
+    const teePath = path.join(tmp, "chatty-stdout.log");
+    const r = await run(process.execPath, ["-e", "let n=0; const t=setInterval(()=>{ console.log('tick'+(n++)); if(n>=10){clearInterval(t);} }, 60)"], {
+      timeoutMs: 55_000, teePath,
+      watchdog: { silenceMs: 400, probeGapMs: 100, pollMs: 50, onProgress },
+    });
+    assert.ok(r.ok && !r.wedged, `chatty vendor must complete normally: ${JSON.stringify(r)}`);
+    assert.equal(probes, 0, "probe must NEVER start while output flows (healthy path is zero-cost)");
+    assert.match(readFileSync(teePath, "utf8"), /tick0[\s\S]*tick9/, "stdout must tee to the log file in real time");
+  }
+
+  // CPU ALIVE during silence (server-side long thinking) → observed, NOT killed
+  {
+    let cpu = 0;
+    _setCpuProbeImplForTests(async () => { cpu += 3; return cpu; }); // rising CPU
+    const r = await run(process.execPath, ["-e", "setTimeout(()=>{ console.log('DONE'); }, 900)"], {
+      timeoutMs: 55_000,
+      watchdog: { silenceMs: 200, probeGapMs: 80, pollMs: 40, onProgress },
+    });
+    assert.ok(r.ok && !r.wedged && r.stdout.includes("DONE"), `alive-CPU silence must survive to completion: ${JSON.stringify(r)}`);
+  }
+
+  _setCpuProbeImplForTests(null);
+  rmSync(tmp, { recursive: true, force: true });
+  console.log("ok wedge watchdog (silent→killed, chatty→no probe, thinking→spared)");
+}
+
+// --- ai_job_list (#1): cross-session discovery ---------------------------------
+{
+  const tmpRoot = mkdtempSync(path.join(os.tmpdir(), "ai-bridge-list-"));
+  const savedRoot = process.env.AI_BRIDGE_JOBS_ROOT;
+  process.env.AI_BRIDGE_JOBS_ROOT = tmpRoot;
+
+  const mk = (id, patch) => {
+    mkdirSync(path.join(tmpRoot, id), { recursive: true });
+    writeJson(path.join(tmpRoot, id, "job.json"), {
+      id, key: `k-${id}`, kind: "review", vendor: "gpt", state: "completed",
+      evidence_path: null, report_path: null, finished_at: "2026-07-16T02:00:00.000Z",
+      ...patch,
+    });
+  };
+  mk("job-old", { started_at: "2026-07-16T01:00:00.000Z" });
+  mk("job-new", { started_at: "2026-07-16T03:00:00.000Z", state: "failed", error: "x" });
+  mk("job-mid", { started_at: "2026-07-16T02:00:00.000Z", vendor: "gemini", evidence_path: "D:/ev/mid.md" });
+
+  const all = listJobs({ limit: 20 });
+  assert.deepEqual(all.map((j) => j.id), ["job-new", "job-mid", "job-old"], `newest-first ordering broken: ${JSON.stringify(all.map((j) => j.id))}`);
+  assert.equal(all[0].state, "failed");
+  assert.equal(all[1].vendor, "gemini");
+  assert.equal(all[1].evidence_path, "D:/ev/mid.md");
+  assert.ok(all.every((j) => "kind" in j && "started_at" in j && "finished_at" in j && "report_path" in j), "list entries must carry the full field set");
+  assert.deepEqual(listJobs({ limit: 2 }).map((j) => j.id), ["job-new", "job-mid"], "limit must truncate after sorting");
+
+  if (savedRoot === undefined) delete process.env.AI_BRIDGE_JOBS_ROOT; else process.env.AI_BRIDGE_JOBS_ROOT = savedRoot;
+  rmSync(tmpRoot, { recursive: true, force: true });
+  console.log("ok ai_job_list (3 fake jobs: order, fields, limit)");
 }
 
 // --- async job layer (offline: fake runner under an explicit env gate) -------
@@ -264,8 +460,50 @@ console.log("ok arg builders");
   assert.equal(readJob(sleepJobId).state, "running", "live runner with a stalled heartbeat must not be reconciled failed");
   decoy.kill();
 
-  // 8. persistently corrupt job.json must THROW (fail loud), never read as
-  //    "job absent" — that silent null is exactly what re-launches a vendor
+  // 8. VERDICT exit contract (#6): a gated review that completes WITHOUT a
+  //    terminal VERDICT line is a FAILURE (evidence still written), never a
+  //    completed job handing garbage downstream ("run_command" incident)
+  const malformedEv = path.join(tmpRoot, "ev", "malformed.md");
+  const malformed = startJob({
+    kind: "review", vendor: "gemini", prompt: "verdict-test-malformed", effort: "high",
+    expect_verdict: true, evidence_path: malformedEv, timeoutMs: 60000,
+    fake: { delayMs: 0, result: { ok: true, output: "run_command", commandLine: "fake" } },
+  });
+  meta = await waitJob(malformed.jobId, 20000);
+  assert.equal(meta.state, "failed", `malformed gated review must FAIL: ${JSON.stringify(meta)}`);
+  assert.match(readResult(malformed.jobId).error, /MALFORMED/i);
+  assert.ok(existsSync(malformedEv) && readFileSync(malformedEv, "utf8").includes("run_command"), "evidence must still land for forensics");
+
+  const wellformed = startJob({
+    kind: "review", vendor: "gemini", prompt: "verdict-test-wellformed", effort: "high",
+    expect_verdict: true, timeoutMs: 60000,
+    fake: { delayMs: 0, result: { ok: true, output: "[MINOR] a.mjs:1 — nit → fix\nVERDICT: GREEN\n", commandLine: "fake" } },
+  });
+  meta = await waitJob(wellformed.jobId, 20000);
+  assert.equal(meta.state, "completed", `well-formed gated review must complete: ${JSON.stringify(meta)}`);
+
+  const ungated = startJob({
+    kind: "review", vendor: "gemini", prompt: "verdict-test-ungated", effort: "high", timeoutMs: 60000,
+    fake: { delayMs: 0, result: { ok: true, output: "just an ad-hoc opinion, no verdict line", commandLine: "fake" } },
+  });
+  meta = await waitJob(ungated.jobId, 20000);
+  assert.equal(meta.state, "completed", "expect_verdict unset → old behavior unchanged");
+
+  // expect_verdict participates in the idempotency key: a gated re-send must
+  // NOT dedupe onto a running UNGATED job with the same prompt
+  const dedupBase = {
+    kind: "review", vendor: "gemini", prompt: "verdict-test-key", effort: "high", timeoutMs: 60000,
+    fake: { delayMs: 8000, result: { ok: true, output: "VERDICT: GREEN", commandLine: "fake" } },
+  };
+  const ungatedRun = startJob(dedupBase);
+  const gatedRun = startJob({ ...dedupBase, expect_verdict: true });
+  assert.notEqual(gatedRun.jobId, ungatedRun.jobId, "different exit contract must be a different job");
+  cancelJob(ungatedRun.jobId);
+  cancelJob(gatedRun.jobId);
+
+  // 9. persistently corrupt job.json must THROW (fail loud), never read as
+  //    "job absent" — that silent null is exactly what re-launches a vendor.
+  //    (Kept LAST: the corrupt dir poisons every later startJob/findRunning scan.)
   const corruptDir = path.join(tmpRoot, "corrupt-job-1");
   mkdirSync(corruptDir, { recursive: true });
   writeFileSync(path.join(corruptDir, "job.json"), "{not json", "utf8");
@@ -299,7 +537,7 @@ await new Promise((resolve, reject) => {
       }
       if (msg.id === 2) {
         const names = msg.result.tools.map((t) => t.name).sort();
-        assert.deepEqual(names, ["ai_digest", "ai_exec_start", "ai_job_cancel", "ai_job_result", "ai_job_status", "ai_review_start"]);
+        assert.deepEqual(names, ["ai_digest", "ai_exec_start", "ai_job_cancel", "ai_job_list", "ai_job_result", "ai_job_status", "ai_review_start"]);
         clearTimeout(timer);
         child.kill();
         console.log("ok mcp handshake: " + names.join(", "));

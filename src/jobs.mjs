@@ -118,6 +118,9 @@ export function idempotencyKey(request) {
     resume: request.resume ?? null,
     evidence_path: request.evidence_path ?? null,
     report_path: request.report_path ?? null,
+    // different exit contract = different run (a verdict-gated review must not
+    // dedupe onto an ungated one, or vice versa)
+    expect_verdict: request.expect_verdict ?? false,
   });
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
@@ -275,6 +278,47 @@ export function findRunning(request) {
     if (meta && !isTerminal(meta.state)) return meta;
   }
   return null;
+}
+
+// Cross-session job discovery: a job_id normally lives only in the context of
+// the session that started it — after a crash/compaction the id is gone and a
+// re-send with different phrasing misses the idempotency key (batch-E: two
+// parallel GPT xhigh runs of the SAME closing gate). listJobs makes the jobs
+// root browsable so a fresh session finds and re-attaches to the original job.
+export function listJobs({ limit = 20 } = {}) {
+  let dirs;
+  try {
+    dirs = readdirSync(jobsRoot());
+  } catch {
+    return [];
+  }
+  const jobs = [];
+  for (const id of dirs) {
+    if (!JOB_ID_RE.test(id)) continue;
+    try {
+      const meta = readJob(id); // reconciled read — a dead runner lists as failed, not eternal running
+      if (!meta) continue;
+      jobs.push({
+        id: meta.id ?? id,
+        kind: meta.kind ?? null,
+        vendor: meta.vendor ?? null,
+        state: meta.state,
+        started_at: meta.started_at ?? null,
+        finished_at: meta.finished_at ?? null,
+        evidence_path: meta.evidence_path ?? null,
+        report_path: meta.report_path ?? null,
+      });
+    } catch (error) {
+      // one corrupt job must not hide the rest of the list — but it must not
+      // hide ITSELF either (fail loud as a visible unreadable entry)
+      jobs.push({ id, state: "unreadable", error: String(error?.message ?? error) });
+    }
+  }
+  // started_at descending; unreadable entries fall back to the id, which opens
+  // with the same timestamp (colons/dots dashed) — normalize so both compare.
+  const sortKey = (j) => String(j.started_at ?? j.id ?? "").replace(/[:.]/g, "-");
+  jobs.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+  return jobs.slice(0, Math.max(1, limit));
 }
 
 // Lazy GC so the jobs root doesn't grow forever: terminal jobs older than 7
