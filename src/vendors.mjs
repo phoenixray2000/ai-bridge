@@ -172,20 +172,39 @@ function killTree(child) {
 async function realCpuProbe(rootPid) {
   // One-shot listing of every process (pid, ppid, cpuSeconds); the tree sum is
   // computed here — the vendor may do its real work in a child process.
+  // Probe child gets a hard timeout + no stderr pipe: a hung Get-CimInstance
+  // (or a filled, undrained stderr buffer) must never wedge the WATCHDOG
+  // itself — an unresolved sample would freeze "probing" forever and the
+  // child handle would keep the runner alive. Timeout → kill + inconclusive.
+  const PROBE_CHILD_TIMEOUT_MS = 20_000;
   const list = (bin, args) =>
     new Promise((res) => {
       let out = "";
       let c;
       try {
-        c = spawn(bin, args, { windowsHide: true });
+        c = spawn(bin, args, { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
       } catch {
         res("");
         return;
       }
+      const t = setTimeout(() => {
+        try {
+          c.kill("SIGKILL");
+        } catch {
+          /* already gone */
+        }
+        res(""); // inconclusive — never a kill verdict
+      }, PROBE_CHILD_TIMEOUT_MS);
       c.stdout.setEncoding("utf8");
       c.stdout.on("data", (d) => (out += d));
-      c.on("error", () => res(""));
-      c.on("close", () => res(out));
+      c.on("error", () => {
+        clearTimeout(t);
+        res("");
+      });
+      c.on("close", () => {
+        clearTimeout(t);
+        res(out);
+      });
     });
   const rows = [];
   if (IS_WIN) {
@@ -279,13 +298,19 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
       const raw = process.env[name];
       if (raw === undefined || raw === "") return fallback;
       const v = Number(raw);
-      return Number.isFinite(v) && v >= 1 ? v : fallback;
+      // upper bound: Node timers overflow past 2^31-1 ms and fire at ~1ms —
+      // a "huge gap" knob would become instant sampling and a false wedge
+      return Number.isFinite(v) && v >= 1 && v <= 2 ** 31 - 1 ? v : fallback;
     };
     const silenceMs = watchdog?.silenceMs ?? envMs("AI_BRIDGE_WEDGE_SILENCE_MS", 600_000);
     const probeGapMs = watchdog?.probeGapMs ?? envMs("AI_BRIDGE_WEDGE_PROBE_GAP_MS", 300_000);
     const pollMs = watchdog?.pollMs ?? Math.min(30_000, Math.max(50, Math.floor(silenceMs / 4)));
     const emitProgress = (force = false) => {
       if (!watchdog?.onProgress) return;
+      // Settled = this attempt's snapshot is FINAL. A stale async probe (or
+      // anything else) emitting after finish would overwrite the NEXT
+      // attempt's / the terminal progress.json with this attempt's leftovers.
+      if (settled) return;
       const now = Date.now();
       if (!force && now - lastProgressWrite < 2000) return; // throttle: milestones + 2s cadence, not per-chunk
       lastProgressWrite = now;
@@ -336,6 +361,9 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
         } catch {
           s = null;
         }
+        // the async probe may resolve AFTER the attempt settled or the probe
+        // was superseded — a stale sample must not touch the record
+        if (stale()) return s;
         cpuSamples.push({ at: new Date().toISOString(), cpuSeconds: s });
         emitProgress(true);
         return s;
@@ -395,13 +423,16 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
     };
     const finish = (result) => {
       if (settled) return;
+      // final snapshot BEFORE the settled gate closes (emitProgress refuses
+      // to write once settled — that same gate is what freezes this snapshot
+      // against late stale-probe emissions)
+      emitProgress(true);
       settled = true;
       clearTimeout(timer);
       if (pollTimer) clearInterval(pollTimer);
       // wake + clear ALL in-flight probe gap sleeps: any pending 5min setTimeout
       // would keep the (already-resolved) runner process alive
       cancelProbeSleeps();
-      emitProgress(true);
       resolve(result);
     };
 

@@ -70,4 +70,18 @@ GPT verdict: NEEDS-FIX (2 MAJOR, 3 MINOR).
 | 4 | skills/gpt + methodology still say 120s long-poll | MINOR | **ACCEPT** | Fix: synced to 300s. |
 | 5 | README/DESIGN say "two samples" while the implementation takes baseline + two (three samples, two deltas) | MINOR | **ACCEPT** | Fix: wording corrected in both. |
 
-Dispatch: all 5 fixed (orchestrator direct).
+Dispatch: all 5 fixed (orchestrator direct). R3 fixes landed as 0252aca.
+
+## Round 4 — 2026-07-16
+
+Whole diff re-reviewed afresh. Evidence: `async-hardening-r4-gpt.md`
+(job 2026-07-16T12-32-53-877Z-review-gpt-fd73ad, non-empty, this round).
+GPT verdict: NEEDS-FIX (2 MAJOR, 1 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | a stale async CPU probe resolving after finish() still pushes samples + emits progress — can overwrite the next attempt's / terminal progress.json | MAJOR | **ACCEPT** | Fix: emitProgress refuses once settled; finish emits the final snapshot BEFORE closing the gate; sample() drops stale results. |
+| 2 | probe child process has no timeout and an undrained stderr pipe — a hung Get-CimInstance freezes "probing" forever and holds the runner alive | MAJOR | **ACCEPT** | Fix: 20s hard timeout (kill + inconclusive), stderr ignored. |
+| 3 | envMs accepts values past 2^31-1 — Node timer overflow fires at ~1ms (instant sampling, false wedge) | MINOR | **ACCEPT** | Fix: upper bound clamp with fallback to default. |
+
+Dispatch: all 3 fixed (orchestrator direct).
