@@ -10,17 +10,19 @@ behavioral SPOT):
 
 | Tool | Role | Access | Default |
 |---|---|---|---|
-| `ai_review_start` | adversarial cross-vendor review → **detached background job** | read-only **by reference** on `cwd` (reviewer reads files / runs git itself); omit `cwd` only for repo-less snippets | effort `high`, timeout 25 min |
-| `ai_exec_start` | mechanical task execution → **detached background job** | write, confined to the given `cwd` (clean-git-tree guard, checked synchronously at start) | effort `medium`, timeout 25 min |
-| `ai_job_status` / `ai_job_result` / `ai_job_cancel` | job lifecycle: instant state / long-poll collect (120s default) / kill tree | jobs live on disk (`~/.ai-bridge/jobs`), survive session death, readable from a new session; terminal jobs GC after 7 days (evidence/report files unaffected) | — |
+| `ai_review_start` | adversarial cross-vendor review → **detached background job** | read-only **by reference** on `cwd` — gpt runs git itself; **gemini reads a MATERIALIZED diff file** (headless `--sandbox` auto-denies command tools; use `git diff --output=<file>`, never shell `>`); omit `cwd` only for repo-less snippets | effort `high`, budget 25 min; `expect_verdict: true` on gate calls |
+| `ai_exec_start` | mechanical task execution → **detached background job** | write, confined to the given `cwd` (clean-git-tree guard, checked synchronously at start) | effort `medium`, budget 25 min |
+| `ai_job_status` / `ai_job_result` / `ai_job_cancel` / `ai_job_list` | job lifecycle: instant state + liveness diagnostics / long-poll collect (300s default) / kill tree / cross-session discovery (newest first) | jobs live on disk (`~/.ai-bridge/jobs`), survive session death, readable from a new session; terminal jobs GC after 7 days (evidence/report files unaffected) | — |
 | `ai_digest` | context offload (P4): bulky material in, summary out — **synchronous** (digests are short) | embedded files (no fs) or read on `cwd` | Gemini Flash, effort `medium` |
 
 **Why async jobs**: a blocking MCP call ties a 20-40min vendor run to the Claude
 session — the stdio idle-timeout (default 30 min) aborts silently-long reviews,
 a session crash kills the in-flight run, and the harness retry then re-launches
 agy (clustered cold-starts provoke browser OAuth). Start returns in
-milliseconds; the **idempotency key** (kind+vendor+cwd+prompt+effort+paths) maps
-any retry back to the original running job instead of double-launching.
+milliseconds; the **idempotency key** (kind+vendor+cwd+prompt+effort+paths,
+plus `expect_verdict` when true) maps any retry back to the original running
+job instead of double-launching; a job_id lost with a dead session is found
+again via `ai_job_list` (never re-send a re-phrased prompt — it misses the key).
 
 Seven routing skills surface as `/aibridge:*` slash commands: `route`
 (dispatcher + canonical scenario table), `ai-model` (scenario state),
@@ -57,6 +59,21 @@ Reliability:
   terminal marker is reported FAILED with the runner-log tail — never eternal
   "running". agy's `--print-timeout` follows the job's `timeout_minutes`
   (it was a hardcoded 15m that silently killed long whole-batch reviews).
+- **wedge watchdog (lazy CPU probe)**: vendor stdout/stderr tees to
+  `<jobDir>/stdout.log`; after 10 min of silence the runner samples the vendor
+  process tree's CPU twice (5 min apart) — two flat deltas = dead connection →
+  kill + budget-bounded retry. Healthy path costs nothing; diagnostics land in
+  `progress.json` (shown by `ai_job_status`). Knobs:
+  `AI_BRIDGE_WEDGE_SILENCE_MS` / `AI_BRIDGE_WEDGE_PROBE_GAP_MS`.
+- **`timeout_minutes` is a JOB-LEVEL budget**: retries spend the remainder
+  (never restart the clock); under 60s left the job fails instead of retrying.
+- **VERDICT exit contract**: `expect_verdict: true` (mandatory on gate calls)
+  fails a review whose output lacks the terminal `VERDICT:` line — exit 0 +
+  non-empty is not proof of a review (evidence still written for forensics).
+- **auto-denied = permanent**: agy stderr matching the headless auto-denied
+  signature fails immediately with the materialized-diff guidance — no retry,
+  no store recovery. Recovered store answers get a plausibility floor (a bare
+  token like `run_command` is a recovery failure, not an answer).
 - `ai_digest` file embedding rejects >400KB instead of truncating.
 
 ## Prerequisites
@@ -106,11 +123,14 @@ requires the arbitration record; `--verdict-lines` enforces the terminal
 ## Usage notes
 
 - `ai_review_start`: **by reference, never inline** — pass `cwd` and reference
-  the diff range / changed paths / spec path in the prompt; the reviewer reads
-  them itself. Append the xreview Output contract verbatim. Write
-  `evidence_path` under the consuming repo's review-evidence dir. Collect with
-  `ai_job_result`; while it reports running, call it again — never re-start.
-  Raise `timeout_minutes` (e.g. 60) for whole-batch / closing-gate diffs.
+  changed paths / spec path in the prompt (gpt: live diff range; gemini: a
+  materialized diff file via `git diff --output=<file>`, prompt forbids running
+  commands). Append the xreview Output contract verbatim and pass
+  `expect_verdict: true` on gate calls. Write `evidence_path` under the
+  consuming repo's review-evidence dir. Collect with `ai_job_result`; while it
+  reports running, call it again — never re-start. `timeout_minutes` per the
+  xreview table: regular 25 (omit) / closing-gate whole-diff 90 / huge batch or
+  cutover 120–180; when unsure take the larger tier.
 - `ai_exec_start`: `cwd` is the blast radius; keep the tree clean (or pass
   `allow_dirty` knowingly). Use `report_path` to keep stdout to a summary. The
   completed result carries the vendor session id for `resume`.

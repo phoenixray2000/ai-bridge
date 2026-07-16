@@ -37,3 +37,21 @@ non-empty, this round). GPT verdict: NEEDS-FIX (7 MAJOR, 1 MINOR).
 Dispatch: all 8 fixed in this round's follow-up commit (orchestrator direct — single-file-scale
 edits, subtle concurrency fixes stay in the author session). New regression tests: nonzero-exit
 signature, cross-version key stability, leading-whitespace VERDICT, negative-delta probe.
+R1 fixes landed as fb55b8d.
+
+## Round 2 — 2026-07-16
+
+Whole diff re-reviewed afresh (e5788d5..fb55b8d + evidence commits). Evidence:
+`async-hardening-r2-gpt.md` (job 2026-07-16T06-05-17-973Z-review-gpt-aa68bb, non-empty,
+this round). GPT verdict: NEEDS-FIX (4 MAJOR, 2 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | probe generations share a single probeTimer/probeWake handle — an old probe's pending sleep survives replacement; runner can linger ≤probeGapMs post-close | MAJOR | **ACCEPT** | Verified: the R1 fix only cancels the LATEST sleep. Fix: pending sleeps tracked as a Set, canceled on mid-probe output AND on finish. |
+| 2 | `git diff ... > file` in the skill/tool texts re-encodes to UTF-16 under PS5.1 (Out-File default), corrupting the materialized diff | MAJOR | **ACCEPT** | Real and nasty — the primary shell here IS PS5.1. Fix: `git diff --output=<file>` everywhere (xreview, smart-plan, server tool text, vendors error guidance). |
+| 3 | listJobs swallows ALL readdir errors into an empty list — EPERM/EIO reads as "no jobs", defeating the anti-double-launch purpose | MAJOR | **ACCEPT** | Fix: ENOENT → empty list; anything else throws (guarded handler surfaces it). |
+| 4 | README/DESIGN drift: "reviewer runs git itself", closing-gate 60min advice, wait_seconds=120, missing ai_job_list/expect_verdict | MAJOR | **ACCEPT** | Docs are what a caller actually follows. Fix: README table/reliability/usage-notes + DESIGN §5 synced to the 0.14 contract. |
+| 5 | run() full-trims stdout — an output that IS just "  VERDICT: GREEN" gets normalized past the raw-line anchor | MINOR | **ACCEPT** | Fix: stdout trimEnd only; gemini emptiness test trims both ends explicitly. Regression test added. |
+| 6 | ai_job_status hides progress diagnostics on terminal states — exactly when a wedge post-mortem needs them | MINOR | **ACCEPT** | Fix: progress shown for terminal states too, next-step hint kept. |
+
+Dispatch: all 6 fixed (orchestrator direct).

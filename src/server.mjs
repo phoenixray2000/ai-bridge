@@ -100,7 +100,8 @@ server.tool(
     "vendor=gpt runs git itself from cwd (danger-full-access, live diff range in " +
     "the prompt is fine); vendor=gemini runs headless --sandbox where command " +
     "tools are AUTO-DENIED — its prompt must reference a MATERIALIZED diff FILE " +
-    "(git diff <base>..<head> > file) and explicitly forbid running commands, or " +
+    "(git diff --output=<file> <base>..<head> — byte-safe; PS5.1 '>' redirection " +
+    "writes UTF-16 and corrupts the diff) and explicitly forbid running commands, or " +
     "the review dies silently. Omit cwd ONLY for a repo-less snippet inlined in " +
     "the prompt. evidence_path lands the raw output for the phase gate. " +
     "Idempotent: identical params while a job is still running return the ORIGINAL " +
@@ -214,9 +215,12 @@ server.tool(
   guarded(async ({ job_id }) => {
     const meta = readJob(job_id);
     if (!meta) return textResult(`unknown job: ${job_id}`, true);
+    // progress shows for terminal states too — a wedged/failed job's last-output
+    // age, byte count and CPU samples are exactly the post-mortem evidence
     return textResult(
       `job ${meta.id}: ${meta.state} (kind=${meta.kind} vendor=${meta.vendor}, elapsed ${elapsedSeconds(meta)}s)` +
-        (isTerminal(meta.state) ? "\nnext: ai_job_result to collect the output" : progressText(meta.id)),
+        progressText(meta.id) +
+        (isTerminal(meta.state) ? "\nnext: ai_job_result to collect the output" : ""),
     );
   }),
 );

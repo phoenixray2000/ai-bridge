@@ -84,7 +84,9 @@ reviewer to run `git diff` is therefore a guaranteed silent death on any
 whole-batch gate (exit 0, empty stdout; small phase reviews only read files,
 which is why this never surfaced before batch-E). So for the **Gemini seat**:
 1. Materialize the diff first:
-   `git diff <base>..<head> > docs/reviews/<label>-diff.txt`.
+   `git diff --output=docs/reviews/<label>-diff.txt <base>..<head>`
+   (**`--output=`, never shell `>`** — PowerShell 5.1 redirection re-encodes
+   native stdout as UTF-16 and corrupts the diff file).
 2. The prompt references that file (plus changed paths / spec path) and states
    explicitly: **"只读文件,禁跑任何命令(沙箱会 auto-deny)"**.
 3. After the gate completes, DELETE the materialized diff file (it's scratch,

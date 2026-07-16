@@ -293,16 +293,28 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
     };
     // Probe generation: a probe aborted by output must not interleave with a
     // NEWER probe started later ("wdState === probing" alone can't tell whose
-    // probing it is). The gap sleep is CANCELABLE so a finished process doesn't
-    // hold the runner's event loop alive for up to probeGapMs (5min in prod).
+    // probing it is). Gap sleeps are CANCELABLE and tracked as a SET — an old
+    // generation's pending sleep must not survive just because a newer probe
+    // replaced the (single) handle; any leftover timer would hold the runner's
+    // event loop alive for up to probeGapMs (5min in prod) after close.
     let probeGen = 0;
-    let probeTimer = null;
-    let probeWake = null;
+    const pendingProbeSleeps = new Set();
     const probeSleep = (ms) =>
       new Promise((res) => {
-        probeWake = res;
-        probeTimer = setTimeout(res, ms);
+        const entry = { timer: null, wake: res };
+        entry.timer = setTimeout(() => {
+          pendingProbeSleeps.delete(entry);
+          res();
+        }, ms);
+        pendingProbeSleeps.add(entry);
       });
+    const cancelProbeSleeps = () => {
+      for (const entry of pendingProbeSleeps) {
+        clearTimeout(entry.timer);
+        entry.wake(); // woken probe sees stale() and exits immediately
+      }
+      pendingProbeSleeps.clear();
+    };
     const runProbe = async () => {
       const gen = ++probeGen;
       wdState = "probing";
@@ -364,9 +376,11 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
         }
       }
       if (wdState === "probing") {
-        // output arrived mid-probe: the vendor is alive — abort the probe
+        // output arrived mid-probe: the vendor is alive — abort the probe and
+        // release its pending gap sleep (don't leave a 5min timer smoldering)
         wdState = "observing";
         resumeAt = Date.now();
+        cancelProbeSleeps();
       }
       emitProgress();
     };
@@ -375,10 +389,9 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
       settled = true;
       clearTimeout(timer);
       if (pollTimer) clearInterval(pollTimer);
-      // wake + clear any in-flight probe gap sleep: a pending 5min setTimeout
+      // wake + clear ALL in-flight probe gap sleeps: any pending 5min setTimeout
       // would keep the (already-resolved) runner process alive
-      if (probeTimer) clearTimeout(probeTimer);
-      if (probeWake) probeWake();
+      cancelProbeSleeps();
       emitProgress(true);
       resolve(result);
     };
@@ -400,7 +413,10 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
         exitCode: code,
         timedOut,
         wedged,
-        stdout: stdout.trim(),
+        // trimEnd only: leading whitespace is CONTENT (the VERDICT exit
+        // contract anchors on the raw line — a full trim would normalize an
+        // indented first-line "  VERDICT: ..." into a passing one)
+        stdout: stdout.trimEnd(),
         stderr: stderr.trim(),
       });
     });
@@ -677,7 +693,9 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       const attemptSince = Date.now();
       const r = await runImpl(agyBin(), args, { cwd, timeoutMs: remainingMs, teePath, watchdog });
       const tag = attempt > 1 ? ` (agy attempt ${attempt}/${maxAttempts})` : "";
-      if (r.ok && r.stdout !== "") {
+      if (r.ok && r.stdout.trim() !== "") {
+        // emptiness test trims BOTH ends (stdout itself keeps leading
+        // whitespace — see run()); all-whitespace output is the empty flake
         return { ok: true, commandLine, output: r.stdout, ...(attempt > 1 ? { note: `succeeded on retry${tag}` } : {}) };
       }
       // Non-success from here. The DIAGNOSIS lives on stderr — check it FIRST,
@@ -693,7 +711,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
           error:
             `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant).\n` +
             `stderr: ${(r.stderr ?? "").trim().slice(0, 600)}\n` +
-            `Fix: materialize the diff to a file first (git diff <base>..<head> > docs/reviews/<label>-diff.txt) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
+            `Fix: materialize the diff to a file first (git diff --output=docs/reviews/<label>-diff.txt <base>..<head> — byte-safe on every shell) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
         };
       }
       if (r.ok) {

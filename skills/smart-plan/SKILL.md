@@ -149,7 +149,8 @@ the user.
   **Gemini seat's prompt must forbid running commands**(「只读文件,禁跑任何
   命令——沙箱 auto-deny」): agy reviews headless `--sandbox`, command tools are
   auto-denied; anything it needs (plan, spec, R2+ 的 delta diff) must exist AS
-  A FILE — materialize a diff with `git diff ... > docs/reviews/<label>-diff.txt`
+  A FILE — materialize a diff with `git diff --output=docs/reviews/<label>-diff.txt ...`
+  (never shell `>` — PS5.1 re-encodes to UTF-16)
   if the round reviews changes, and delete it after the round (xreview
   Gemini-seat rule; GPT seat unchanged — it runs git itself). Start both
   vendors, collect each with `ai_job_result` (repeat while running — never

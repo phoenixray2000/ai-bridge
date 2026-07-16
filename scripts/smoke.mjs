@@ -308,6 +308,13 @@ console.log("ok arg builders");
     assert.ok(n >= 2, "probe must actually have sampled");
   }
 
+  // run() keeps LEADING whitespace (the VERDICT exit contract anchors on the
+  // raw line — full trim would normalize "  VERDICT: GREEN" into a passing one)
+  {
+    const r = await run(process.execPath, ["-e", "process.stdout.write('  VERDICT: GREEN\\n')"], { timeoutMs: 20_000 });
+    assert.equal(r.stdout, "  VERDICT: GREEN", "leading whitespace is content, only the trailing EOL is trimmed");
+  }
+
   _setCpuProbeImplForTests(null);
   rmSync(tmp, { recursive: true, force: true });
   console.log("ok wedge watchdog (silent→killed, chatty→no probe, thinking→spared)");

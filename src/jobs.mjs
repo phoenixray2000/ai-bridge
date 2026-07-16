@@ -291,8 +291,13 @@ export function listJobs({ limit = 20 } = {}) {
   let dirs;
   try {
     dirs = readdirSync(jobsRoot());
-  } catch {
-    return [];
+  } catch (error) {
+    // Only "no jobs root yet" is legitimately an empty list. EPERM/EIO etc.
+    // must THROW (guarded handler surfaces it) — swallowing them would report
+    // "no jobs" and push the caller straight into the double-launch this tool
+    // exists to prevent.
+    if (error?.code === "ENOENT") return [];
+    throw error;
   }
   const jobs = [];
   for (const id of dirs) {
