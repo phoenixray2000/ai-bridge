@@ -402,16 +402,22 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
         else emitProgress();
       }, pollMs);
     }
-    const onOutput = (d) => {
-      lastOutputAt = Date.now();
-      outBytes += Buffer.byteLength(d);
+    const onOutput = (d, isStdout) => {
       if (teePath) {
         try {
-          appendFileSync(teePath, d);
+          appendFileSync(teePath, d); // BOTH streams tee (diagnostics want everything)
         } catch {
           /* tee is diagnostics, never fatal */
         }
       }
+      // Only STDOUT is a liveness signal. stderr is diagnostics — a dead
+      // connection emitting periodic stderr (heartbeat/retry logs) would
+      // otherwise reset the silence clock forever and the watchdog never
+      // fires. The cost is symmetric-safe: a healthy quiet-stdout vendor just
+      // gets probed earlier, and the CPU probe spares it.
+      if (!isStdout) return;
+      lastOutputAt = Date.now();
+      outBytes += Buffer.byteLength(d);
       if (wdState === "probing") {
         // output arrived mid-probe: the vendor is alive — abort the probe and
         // release its pending gap sleep (don't leave a 5min timer smoldering)
@@ -438,11 +444,11 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
 
     child.stdout.on("data", (d) => {
       stdout += d;
-      onOutput(d);
+      onOutput(d, true);
     });
     child.stderr.on("data", (d) => {
       stderr += d;
-      onOutput(d);
+      onOutput(d, false);
     });
     child.on("error", (error) => {
       finish({ ok: false, exitCode: null, stdout, stderr: stderr + String(error) });
@@ -687,6 +693,11 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
         // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
         result = await runImpl(codexBin(), args, { cwd, timeoutMs: remainingMs, input: prompt, teePath, watchdog: attemptWatchdog });
         if (!result.wedged) break; // only a wedge kill earns the one retry
+        // exec is NOT auto-retried: the killed attempt may already have made
+        // writes, and a blind re-run (fresh session OR replayed resume
+        // instruction) can repeat non-idempotent operations. Fail loud; the
+        // orchestrator inspects the tree and decides (resume is its channel).
+        if (role === "exec") break;
       }
     }
     if (result.ok) {
@@ -826,7 +837,10 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       }
       if (r.wedged) {
         lastErr = "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)";
-        continue; // retryable, bounded by the remaining job budget
+        // exec: no auto-retry — the killed attempt may have made writes and a
+        // re-run can repeat non-idempotent operations; fail loud instead.
+        if (role === "exec") break;
+        continue; // review/digest: retryable, bounded by the remaining job budget
       }
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
       // fast crash / transient re-login → retryable
@@ -840,7 +854,10 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       ok: false,
       commandLine,
       error: result.wedged
-        ? "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)"
+        ? "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)" +
+          (role === "exec"
+            ? " — exec is never auto-retried (the killed attempt may have made writes); inspect the working tree, then resume via ai_exec_start if appropriate"
+            : "")
         : result.timedOut
           ? `timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`
           : `exit code ${result.exitCode}`,

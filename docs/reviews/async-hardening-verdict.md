@@ -97,4 +97,17 @@ GPT verdict: NEEDS-FIX (1 MAJOR, 1 MINOR).
 | 1 | GPT wedge kill fails outright, never retries — spec #4b says a wedge is a retryable fault ("误杀=一次有界重试"), and a false kill dead-ends a mandatory-GPT gate | MAJOR | **ACCEPT** | Fix: gpt leg gets ONE wedge-only retry within the same job budget (60s floor, remainder-only, no backoff needed — codex has no OAuth clustering risk); progress payloads carry attempt + prior snapshot. Offline tests: retry-success, double-wedge fail after exactly 2, no-retry under the floor. |
 | 2 | ai_exec_start timeout_minutes description still reads per-vendor kill timer, not job-level budget | MINOR | **ACCEPT** | Fix: description synced to budget semantics. |
 
+Dispatch: both fixed (orchestrator direct). R5 fixes landed as e2a2234.
+
+## Round 6 — 2026-07-16
+
+Whole diff re-reviewed afresh. Evidence: `async-hardening-r6-gpt.md`
+(job 2026-07-16T12-59-12-783Z-review-gpt-9d642e, non-empty, this round).
+GPT verdict: NEEDS-FIX (2 MAJOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | gpt wedge retry blindly re-runs EXEC — a fresh session replays a possibly-side-effectful task; a resume exec re-sends the same instruction (non-idempotent ops repeated) | MAJOR | **ACCEPT, different fix** | The finding is real; the proposed fix (auto-resume the killed thread with a continue instruction) is REJECTED as more dangerous — the killed attempt's work-site state is unknown, auto-replay is exactly the hazard. Fix: exec wedges are NEVER auto-retried on either leg (gpt loop breaks, gemini loop breaks); the failure message tells the orchestrator to inspect the tree and resume deliberately. Review/digest keep the bounded retry (side-effect-free). |
+| 2 | stderr feeds onOutput — periodic stderr (heartbeat logs) from a dead connection resets the silence clock forever; the watchdog never fires | MAJOR | **ACCEPT** | Both streams still tee to stdout.log, but only STDOUT updates liveness/aborts the probe. Symmetric-safe: a healthy quiet-stdout vendor just gets probed earlier and the CPU probe spares it. Regression tests: stderr-only chatter still wedges; exec wedge no-retry on both legs. |
+
 Dispatch: both fixed (orchestrator direct).

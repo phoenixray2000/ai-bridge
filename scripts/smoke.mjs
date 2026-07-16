@@ -208,6 +208,17 @@ console.log("ok arg builders");
     _setRunImplForTests(async () => { i++; await sleep(120); return WEDGED; }, recoveryFails);
     r = await callVendor({ vendor: "gpt", role: "review", prompt: "gpt-wedge-nobudget", effort: "high", timeoutMs: 60_050 });
     assert.ok(!r.ok && i === 1, `gpt wedge under the budget floor must not retry: attempts=${i}`);
+
+    // EXEC is never auto-retried after a wedge kill (the killed attempt may
+    // have made writes — a blind re-run can repeat non-idempotent operations)
+    i = 0;
+    _setRunImplForTests(async () => { i++; return WEDGED; }, recoveryFails);
+    r = await callVendor({ vendor: "gpt", role: "exec", prompt: "gpt-exec-wedge", effort: "medium", cwd: "D:/x", timeoutMs: 300_000 });
+    assert.ok(!r.ok && i === 1 && /never auto-retried/.test(r.error), `gpt exec wedge must fail without retry: attempts=${i} ${JSON.stringify(r)}`);
+    i = 0;
+    _setRunImplForTests(async () => { i++; return WEDGED; }, recoveryFails);
+    r = await callVendor({ vendor: "gemini", role: "exec", prompt: "agy-exec-wedge", effort: "medium", cwd: "D:/x", timeoutMs: 300_000 });
+    assert.ok(!r.ok && i === 1, `gemini exec wedge must fail without retry: attempts=${i} ${JSON.stringify(r)}`);
   }
 
   // #7a: auto-denied signature on stderr → PERMANENT failure, ONE attempt, no recovery
@@ -338,6 +349,19 @@ console.log("ok arg builders");
     });
     assert.ok(r.ok && !r.wedged && r.stdout.includes("SURVIVED"), `negative-delta probe must spare the vendor: ${JSON.stringify(r)}`);
     assert.ok(n >= 2, "probe must actually have sampled");
+  }
+
+  // stderr is NOT a liveness signal: a dead connection emitting periodic
+  // stderr (heartbeat logs) with silent stdout + flat CPU must still be killed
+  {
+    let probes = 0;
+    _setCpuProbeImplForTests(async () => { probes++; return 5; }); // flat CPU
+    const r = await run(process.execPath, ["-e", "setInterval(()=>console.error('hb'), 60); setTimeout(()=>{}, 60000)"], {
+      timeoutMs: 55_000,
+      watchdog: { silenceMs: 300, probeGapMs: 100, pollMs: 50, onProgress },
+    });
+    assert.ok(r.wedged === true && r.ok === false, `stderr-only chatter must not reset the silence clock: ${JSON.stringify(r)}`);
+    assert.ok(probes >= 3, "the probe must have run despite periodic stderr");
   }
 
   // run() keeps LEADING whitespace (the VERDICT exit contract anchors on the
