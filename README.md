@@ -63,9 +63,10 @@ Reliability:
   `<jobDir>/stdout.log`; after 10 min of silence the runner takes a baseline
   plus two follow-up CPU samples of the vendor process tree (three samples,
   5 min apart) — both deltas flat = dead connection →
-  kill + budget-bounded retry (review/digest only — a wedged **exec** is never
+  kill + budget-bounded retry (review only — a wedged **exec** is never
   auto-retried: the killed attempt may have made writes; inspect the tree and
-  resume deliberately). Healthy path costs nothing; diagnostics land in
+  resume deliberately; synchronous `ai_digest` runs without the watchdog).
+  Healthy path costs nothing; diagnostics land in
   `progress.json` (shown by `ai_job_status`). Knobs:
   `AI_BRIDGE_WEDGE_SILENCE_MS` / `AI_BRIDGE_WEDGE_PROBE_GAP_MS`.
 - **`timeout_minutes` is a JOB-LEVEL budget**: retries spend the remainder

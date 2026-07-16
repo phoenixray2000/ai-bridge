@@ -124,4 +124,21 @@ GPT verdict: NEEDS-FIX (1 MAJOR, 2 MINOR).
 | 2 | lastOutputAt initialized to start time — the panel can never show "never", and post-R6 the label "last output" misdescribes stdout-only tracking | MINOR | **ACCEPT** | Fix: null until the first stdout byte (panel shows "never"); silence baseline lives in resumeAt; panel label now "last stdout". |
 | 3 | README/DESIGN still promise a budget-bounded retry for every wedge — contradicts R6's exec no-retry rule | MINOR | **ACCEPT** | Fix: both docs state review/digest-only retry, exec fails loud. |
 
-Dispatch: all 3 fixed (orchestrator direct).
+Dispatch: all 3 fixed (orchestrator direct). R7 fixes landed as 855a234.
+
+## Round 8 — 2026-07-16 — **GREEN**
+
+Whole diff re-reviewed afresh. Diff header (`git diff --stat e5788d5..HEAD` tail, pasted from command output this round, including the R8-MINOR closing fixes):
+`20 files changed, 1362 insertions(+), 83 deletions(-)` (src 4 + smoke + skills 4 + README/DESIGN/methodology + review evidence files).
+Evidence: `async-hardening-r8-gpt.md` (job 2026-07-16T13-29-26-017Z-review-gpt-f2b311,
+non-empty, this round). GPT verdict: **GREEN** (0 BLOCKER, 0 MAJOR, 3 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | README/DESIGN say the watchdog retries "review/digest" — but synchronous ai_digest never enables the watchdog | MINOR | **ACCEPT** | Docs corrected to review-only, digest exclusion stated. |
+| 2 | auto-denied permanent failure truncates stderr to 600 chars — spec #7 wants the full diagnosis | MINOR | **ACCEPT** | Full stderr now travels in the structured failure's stderr field; error keeps classification + guidance. |
+| 3 | ai_job_status tool text still says "last-output age" after the stdout-only liveness split | MINOR | **ACCEPT** | Tool text corrected to last-stdout + stderr-not-liveness note. |
+
+All 3 MINORs fixed in the closing commit. **Gate result: GREEN — no BLOCKER/MAJOR in the
+latest round's arbitrated findings. 31 findings total across 8 rounds, every one accepted
+(R6#1 with a safer fix variant) and applied. Loop closed within the 8-round cap.**

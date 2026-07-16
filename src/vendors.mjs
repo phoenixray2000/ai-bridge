@@ -808,9 +808,11 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       if (/auto-denied|required the "command" permission/.test(r.stderr ?? "")) {
         return {
           ok: false, commandLine, degrade: true,
+          // full stderr travels in its own field (the diagnosis contract);
+          // the error keeps only the classification + fix guidance
+          stderr: r.stderr,
           error:
-            `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant).\n` +
-            `stderr: ${(r.stderr ?? "").trim().slice(0, 600)}\n` +
+            `agy auto-denied a command-class tool under headless --sandbox — PERMANENT failure, retry/recovery cannot help (the prompt asks the reviewer to RUN COMMANDS, which headless mode cannot grant). Full stderr attached.\n` +
             `Fix: materialize the diff to a file first (git diff --output=docs/reviews/<label>-diff.txt <base>..<head> — byte-safe on every shell) and instruct the reviewer to READ FILES ONLY — never run commands (xreview Gemini-seat rule).`,
         };
       }

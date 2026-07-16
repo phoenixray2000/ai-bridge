@@ -214,8 +214,9 @@ function progressText(jobId) {
 server.tool(
   "ai_job_status",
   "Instant state of a background job: starting/running/completed/failed/cancelled " +
-    "+ elapsed seconds + liveness diagnostics (last-output age, stdout bytes, CPU-probe " +
-    "watchdog state). A job whose runner died without finishing is reported as " +
+    "+ elapsed seconds + liveness diagnostics (last-stdout age, stdout bytes, CPU-probe " +
+    "watchdog state; stderr tees to the log but does not count as liveness). A job " +
+    "whose runner died without finishing is reported as " +
     "FAILED here (never eternal 'running'). Works across sessions — jobs live on " +
     `disk (${jobsRoot()}).`,
   { job_id: z.string() },
