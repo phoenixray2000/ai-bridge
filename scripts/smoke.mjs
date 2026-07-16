@@ -219,6 +219,8 @@ console.log("ok arg builders");
     _setRunImplForTests(async () => { i++; return WEDGED; }, recoveryFails);
     r = await callVendor({ vendor: "gemini", role: "exec", prompt: "agy-exec-wedge", effort: "medium", cwd: "D:/x", timeoutMs: 300_000 });
     assert.ok(!r.ok && i === 1, `gemini exec wedge must fail without retry: attempts=${i} ${JSON.stringify(r)}`);
+    assert.match(r.error, /inspect the working tree/, "gemini exec wedge must carry exec guidance, not review skip-seat language");
+    assert.ok(!/SKIP this Gemini seat/.test(r.error), "exec wedge must not speak review language");
   }
 
   // #7a: auto-denied signature on stderr → PERMANENT failure, ONE attempt, no recovery

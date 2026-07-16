@@ -110,4 +110,18 @@ GPT verdict: NEEDS-FIX (2 MAJOR).
 | 1 | gpt wedge retry blindly re-runs EXEC — a fresh session replays a possibly-side-effectful task; a resume exec re-sends the same instruction (non-idempotent ops repeated) | MAJOR | **ACCEPT, different fix** | The finding is real; the proposed fix (auto-resume the killed thread with a continue instruction) is REJECTED as more dangerous — the killed attempt's work-site state is unknown, auto-replay is exactly the hazard. Fix: exec wedges are NEVER auto-retried on either leg (gpt loop breaks, gemini loop breaks); the failure message tells the orchestrator to inspect the tree and resume deliberately. Review/digest keep the bounded retry (side-effect-free). |
 | 2 | stderr feeds onOutput — periodic stderr (heartbeat logs) from a dead connection resets the silence clock forever; the watchdog never fires | MAJOR | **ACCEPT** | Both streams still tee to stdout.log, but only STDOUT updates liveness/aborts the probe. Symmetric-safe: a healthy quiet-stdout vendor just gets probed earlier and the CPU probe spares it. Regression tests: stderr-only chatter still wedges; exec wedge no-retry on both legs. |
 
-Dispatch: both fixed (orchestrator direct).
+Dispatch: both fixed (orchestrator direct). R6 fixes landed as 12308e2.
+
+## Round 7 — 2026-07-16
+
+Whole diff re-reviewed afresh. Evidence: `async-hardening-r7-gpt.md`
+(job 2026-07-16T13-12-23-036Z-review-gpt-f57712, non-empty, this round).
+GPT verdict: NEEDS-FIX (1 MAJOR, 2 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | gemini exec wedge break falls into the review-language degrade tail ("SKIP this Gemini seat"), dropping partial stdout/stderr and the inspect-tree guidance | MAJOR | **ACCEPT** | Fix: exec wedge returns a role-specific failure directly (keeps stdout/stderr, carries inspect-then-resume guidance). Regression asserts no skip-seat language on the exec path. |
+| 2 | lastOutputAt initialized to start time — the panel can never show "never", and post-R6 the label "last output" misdescribes stdout-only tracking | MINOR | **ACCEPT** | Fix: null until the first stdout byte (panel shows "never"); silence baseline lives in resumeAt; panel label now "last stdout". |
+| 3 | README/DESIGN still promise a budget-bounded retry for every wedge — contradicts R6's exec no-retry rule | MINOR | **ACCEPT** | Fix: both docs state review/digest-only retry, exec fails loud. |
+
+Dispatch: all 3 fixed (orchestrator direct).

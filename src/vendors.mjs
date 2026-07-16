@@ -284,8 +284,8 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
     }, timeoutMs);
 
     // --- wedge watchdog (enabled only when the caller passes `watchdog`) ----
-    let lastOutputAt = Date.now();
-    let resumeAt = Date.now(); // observation restarts here after an inconclusive/alive probe
+    let lastOutputAt = null; // first STDOUT byte's wall time; null = none yet (panel shows "never")
+    let resumeAt = Date.now(); // silence baseline: start, then after each inconclusive/alive probe
     let outBytes = 0;
     const cpuSamples = [];
     let wdState = watchdog ? "observing" : "off";
@@ -316,7 +316,7 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
       lastProgressWrite = now;
       try {
         watchdog.onProgress({
-          lastOutputAt: new Date(lastOutputAt).toISOString(),
+          lastOutputAt: lastOutputAt === null ? null : new Date(lastOutputAt).toISOString(),
           stdoutBytes: outBytes,
           cpuSamples: cpuSamples.slice(-6),
           watchdog: wdState,
@@ -398,7 +398,7 @@ export function run(bin, args, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, input, tee
     if (watchdog) {
       pollTimer = setInterval(() => {
         if (wdState !== "observing") return;
-        if (Date.now() - Math.max(lastOutputAt, resumeAt) >= silenceMs) runProbe();
+        if (Date.now() - Math.max(lastOutputAt ?? 0, resumeAt) >= silenceMs) runProbe();
         else emitProgress();
       }, pollMs);
     }
@@ -836,10 +836,20 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
         break; // do NOT retry a full timeout — the budget is gone by definition
       }
       if (r.wedged) {
-        lastErr = "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)";
         // exec: no auto-retry — the killed attempt may have made writes and a
-        // re-run can repeat non-idempotent operations; fail loud instead.
-        if (role === "exec") break;
+        // re-run can repeat non-idempotent operations. Return a role-specific
+        // failure DIRECTLY (the shared degrade tail below speaks review
+        // language — "SKIP the Gemini seat" — and drops the partial output).
+        if (role === "exec") {
+          return {
+            ok: false, commandLine,
+            error:
+              "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection). " +
+              `exec is never auto-retried (the killed attempt may have made writes) — inspect the working tree${cwd ? ` at ${cwd}` : ""}, then resume deliberately if appropriate.`,
+            stdout: r.stdout, stderr: r.stderr,
+          };
+        }
+        lastErr = "watchdog killed a wedged vendor (stdout silent, CPU flat across two probes — dead connection)";
         continue; // review/digest: retryable, bounded by the remaining job budget
       }
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
