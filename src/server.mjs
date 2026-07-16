@@ -152,7 +152,8 @@ server.tool(
     allow_dirty: z.boolean().default(false).describe("Proceed even if cwd has uncommitted changes / is not a git repo"),
     report_path: z.string().optional().describe("Absolute path; the agent is instructed to write its detailed report here and keep stdout to a short summary"),
     timeout_minutes: z.number().int().min(1).max(240).optional()
-      .describe("Vendor kill timer (default 25). Raise for long implementation tasks."),
+      .describe("JOB-LEVEL time budget in minutes (default 25) — retries spend the remainder, never " +
+        "restart the clock; under 60s left the job fails instead of retrying. Raise for long implementation tasks."),
   },
   guarded(async ({ vendor, prompt, cwd, effort, resume, allow_dirty, report_path, timeout_minutes }) => {
     let fullPrompt = prompt;

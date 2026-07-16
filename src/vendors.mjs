@@ -656,8 +656,39 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
   if (vendor === "gpt") {
     const args = codexArgs({ effort, resume });
     commandLine = `codex ${args.join(" ")} <stdin-prompt>${cwd ? ` (cwd=${cwd})` : ""}`;
-    // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
-    result = await runImpl(codexBin(), args, { cwd, timeoutMs, input: prompt, teePath, watchdog });
+    // timeoutMs is the JOB-LEVEL budget here too. A watchdog wedge kill is a
+    // HEURISTIC verdict — a false kill must cost one bounded retry (spec #4b),
+    // not a dead mandatory-GPT gate; the retry spends the REMAINING budget and
+    // is skipped under the 60s floor. (codex has no OAuth clustering risk, so
+    // no backoff is needed.) progress payloads carry the attempt number and
+    // the prior attempt's final snapshot, same shape as the gemini leg.
+    {
+      const totalMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const deadline = Date.now() + totalMs;
+      const priorAttempts = [];
+      let lastAttemptProgress = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (attempt > 1) {
+          if (lastAttemptProgress) {
+            priorAttempts.push(lastAttemptProgress);
+            lastAttemptProgress = null;
+          }
+          if (deadline - Date.now() < 60_000) break; // budget floor: report the wedge instead
+        }
+        const attemptWatchdog = onProgress
+          ? {
+              onProgress: (p) => {
+                lastAttemptProgress = { attempt, ...p };
+                onProgress({ attempt, ...p, ...(priorAttempts.length ? { priorAttempts } : {}) });
+              },
+            }
+          : watchdog;
+        const remainingMs = Math.max(1, deadline - Date.now());
+        // prompt via stdin (the trailing `-`); codex reads files/runs git from cwd.
+        result = await runImpl(codexBin(), args, { cwd, timeoutMs: remainingMs, input: prompt, teePath, watchdog: attemptWatchdog });
+        if (!result.wedged) break; // only a wedge kill earns the one retry
+      }
+    }
     if (result.ok) {
       const parsed = parseCodexJson(result.stdout);
       // We always pass --json; no parseable events means something is wrong

@@ -178,6 +178,38 @@ console.log("ok arg builders");
     assert.ok(r.ok && i === 2, `wedge kill must retry within budget: ${JSON.stringify(r)}`);
   }
 
+  // #4b: the GPT leg gets the SAME one bounded wedge retry (a false kill must
+  // not dead-end a mandatory-GPT gate), still within the job budget
+  {
+    const WEDGED = { ok: false, exitCode: 1, stdout: "", stderr: "", wedged: true };
+    const GPT_OK = {
+      ok: true, exitCode: 0, stderr: "",
+      stdout: '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"RECOVERED"}}',
+    };
+    let i = 0;
+    const rs = [WEDGED, GPT_OK];
+    const seenBudget = [];
+    _setRunImplForTests(async (bin, args, opts) => {
+      seenBudget.push(opts.timeoutMs);
+      return rs[Math.min(i++, rs.length - 1)];
+    }, recoveryFails);
+    let r = await callVendor({ vendor: "gpt", role: "review", prompt: "gpt-wedge-retry", effort: "high", timeoutMs: 300_000 });
+    assert.ok(r.ok && r.output === "RECOVERED" && i === 2, `gpt wedge must retry once: ${JSON.stringify(r)}`);
+    assert.ok(seenBudget[1] <= seenBudget[0], "gpt retry must spend the remainder, not restart the clock");
+
+    // two wedges → fail with the watchdog explanation, never a third attempt
+    i = 0;
+    _setRunImplForTests(async () => { i++; return WEDGED; }, recoveryFails);
+    r = await callVendor({ vendor: "gpt", role: "review", prompt: "gpt-wedge-twice", effort: "high", timeoutMs: 300_000 });
+    assert.ok(!r.ok && i === 2 && /watchdog/.test(r.error), `double wedge must fail after exactly 2 attempts: ${JSON.stringify(r)} attempts=${i}`);
+
+    // wedge with (nearly) exhausted budget → NO retry
+    i = 0;
+    _setRunImplForTests(async () => { i++; await sleep(120); return WEDGED; }, recoveryFails);
+    r = await callVendor({ vendor: "gpt", role: "review", prompt: "gpt-wedge-nobudget", effort: "high", timeoutMs: 60_050 });
+    assert.ok(!r.ok && i === 1, `gpt wedge under the budget floor must not retry: attempts=${i}`);
+  }
+
   // #7a: auto-denied signature on stderr → PERMANENT failure, ONE attempt, no recovery
   {
     const DENIED = {

@@ -84,4 +84,17 @@ GPT verdict: NEEDS-FIX (2 MAJOR, 1 MINOR).
 | 2 | probe child process has no timeout and an undrained stderr pipe — a hung Get-CimInstance freezes "probing" forever and holds the runner alive | MAJOR | **ACCEPT** | Fix: 20s hard timeout (kill + inconclusive), stderr ignored. |
 | 3 | envMs accepts values past 2^31-1 — Node timer overflow fires at ~1ms (instant sampling, false wedge) | MINOR | **ACCEPT** | Fix: upper bound clamp with fallback to default. |
 
-Dispatch: all 3 fixed (orchestrator direct).
+Dispatch: all 3 fixed (orchestrator direct). R4 fixes landed as 8de2ced.
+
+## Round 5 — 2026-07-16
+
+Whole diff re-reviewed afresh. Evidence: `async-hardening-r5-gpt.md`
+(job 2026-07-16T12-45-11-665Z-review-gpt-98427c, non-empty, this round).
+GPT verdict: NEEDS-FIX (1 MAJOR, 1 MINOR).
+
+| # | finding | severity | ruling | reason |
+|---|---|---|---|---|
+| 1 | GPT wedge kill fails outright, never retries — spec #4b says a wedge is a retryable fault ("误杀=一次有界重试"), and a false kill dead-ends a mandatory-GPT gate | MAJOR | **ACCEPT** | Fix: gpt leg gets ONE wedge-only retry within the same job budget (60s floor, remainder-only, no backoff needed — codex has no OAuth clustering risk); progress payloads carry attempt + prior snapshot. Offline tests: retry-success, double-wedge fail after exactly 2, no-retry under the floor. |
+| 2 | ai_exec_start timeout_minutes description still reads per-vendor kill timer, not job-level budget | MINOR | **ACCEPT** | Fix: description synced to budget semantics. |
+
+Dispatch: both fixed (orchestrator direct).
