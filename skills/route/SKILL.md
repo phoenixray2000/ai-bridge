@@ -201,7 +201,11 @@ no resume). When in doubt, handoff.
 
 When the last task goes green, do NOT declare done:
 1. `xreview` the **full plan diff** (`git diff <plan-base>..HEAD` vs spec),
-   label `final-<plan-name>`.
+   label `final-<plan-name>`. The closing gate MUST explicitly pass
+   `timeout_minutes` per xreview's pinned table (whole-diff = 90; huge batch /
+   cutover = 120–180) and `expect_verdict: true`; the Gemini seat reviews a
+   MATERIALIZED diff file (xreview Gemini-seat rule) — delete that diff file
+   when the gate closes.
 2. Arbitrate into `final-<plan-name>-verdict.md` (additive-finding gate applies).
 3. Dispatch confirmed fixes through the managed loop, re-verify.
 4. **Re-run the WHOLE-diff xreview until `VERDICT: GREEN`.**

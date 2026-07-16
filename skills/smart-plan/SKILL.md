@@ -144,8 +144,16 @@ the user.
     fails, skip Gemini this round (GPT anchors, note the absence). Never loop
     agy, never seat-swap (xreview degrade policy, SPOT).
 - **By reference, async** — `ai_review_start` with `cwd`, prompt gives spec
-  path + plan path; reviewers read from disk. Start both vendors, collect each
-  with `ai_job_result` (repeat while running — never re-start).
+  path + plan path; reviewers read from disk, **`expect_verdict: true`** (gate
+  call — malformed output must fail the job, not reach arbitration). The
+  **Gemini seat's prompt must forbid running commands**(「只读文件,禁跑任何
+  命令——沙箱 auto-deny」): agy reviews headless `--sandbox`, command tools are
+  auto-denied; anything it needs (plan, spec, R2+ 的 delta diff) must exist AS
+  A FILE — materialize a diff with `git diff ... > docs/reviews/<label>-diff.txt`
+  if the round reviews changes, and delete it after the round (xreview
+  Gemini-seat rule; GPT seat unchanged — it runs git itself). Start both
+  vendors, collect each with `ai_job_result` (repeat while running — never
+  re-start; lost job_id after a crash → `ai_job_list`).
 - **R1 full, R2+ delta.** R1 reviews the whole plan; from R2 review only the
   fixes to the previous round's findings + the plan's changed sections. (Plan
   review only — the closing gate stays literal whole-diff: code regresses

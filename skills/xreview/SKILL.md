@@ -52,20 +52,56 @@ re-consent — account-risk exposure), do NOT spin up a clean-Opus substitute
 Reviews run as DETACHED background jobs (they survive session death; a harness
 retry maps back to the original job via the idempotency key — never a
 double-launch). Per panel vendor, `ai_review_start` with:
-- `cwd: <repo>` — the reviewer reads files / runs git itself. **Never paste
+- `cwd: <repo>` — the reviewer reads files from disk (GPT additionally runs git
+  itself; Gemini CANNOT — see the Gemini-seat rule below). **Never paste
   code/diffs into the prompt** (Windows argv limit truncates; lossy trimming).
-- `prompt`: instructions + references — diff range (`git diff <base>..<head>`),
-  changed paths, spec path.
+- `prompt`: instructions + references — diff range (GPT: `git diff
+  <base>..<head>`; Gemini: the materialized diff FILE), changed paths, spec path.
 - `effort`: default high; **xhigh for cutover diffs**.
 - `evidence_path`: `<repo>/docs/reviews/<label>-<vendor>.md`.
-- `timeout_minutes`: default 25 — **raise (e.g. 60) for whole-batch / closing
-  gate diffs**; the vendor kill timer and agy's own print-timeout both follow it.
+- `expect_verdict: true` — **mandatory on every gate call** (phase / Layer 0 /
+  closing). The job then FAILS instead of completing when the output lacks the
+  terminal `VERDICT:` line — a malformed review can never reach arbitration as
+  a "completed" result. Leave unset only for ad-hoc one-shot opinions.
+- `timeout_minutes` — a JOB-LEVEL budget (retries spend the remainder). Pinned
+  table; **when unsure take the larger tier** (ceiling cost is asymmetric: an
+  oversized budget costs nothing — early return; an undersized one kills a
+  legitimate long review and forces a full re-run):
+
+  | review shape | timeout_minutes |
+  |---|---|
+  | regular phase / plan review | default 25 (omit) |
+  | closing-gate whole-diff | **90** |
+  | huge batch (≥100 files or ≥50 commits) / irreversible-cutover xhigh | **120–180** |
+
+  (Grounded: batch-E's 206-file closing gate legitimately ran 60min+ per vendor.)
+
+### Gemini seat — MATERIALIZED DIFF ONLY, never "run git yourself"
+
+The agy review leg runs `--sandbox` headless: command-class tools are
+**auto-denied** (read-only file access is all it has). A prompt that tells the
+reviewer to run `git diff` is therefore a guaranteed silent death on any
+whole-batch gate (exit 0, empty stdout; small phase reviews only read files,
+which is why this never surfaced before batch-E). So for the **Gemini seat**:
+1. Materialize the diff first:
+   `git diff <base>..<head> > docs/reviews/<label>-diff.txt`.
+2. The prompt references that file (plus changed paths / spec path) and states
+   explicitly: **"只读文件,禁跑任何命令(沙箱会 auto-deny)"**.
+3. After the gate completes, DELETE the materialized diff file (it's scratch,
+   not evidence).
+
+The **GPT seat is unchanged** — codex runs danger-full-access and runs git
+itself; do NOT feed it the materialized diff (live git beats a stale snapshot).
+Rejected alternative: granting agy a command allow-rule — a review seat with
+arbitrary command execution violates read-only, and agy has a rogue-edit record.
 
 Start BOTH vendors first, then collect each with `ai_job_result` (long-polls
-120s; while it reports running, call it again — do NOT re-start). After a
+300s; while it reports running, call it again — do NOT re-start). After a
 session crash/restart, `ai_job_result` with the old job_id recovers the
-finished review instead of re-running it. Inline (omit `cwd`) only for a
-repo-less snippet.
+finished review instead of re-running it; if the job_id is lost with the dead
+session, `ai_job_list` finds it (never re-send a re-phrased prompt — it misses
+the idempotency key and double-launches the vendor). Inline (omit `cwd`) only
+for a repo-less snippet.
 
 ### Visual conformance — when a visual contract exists
 
