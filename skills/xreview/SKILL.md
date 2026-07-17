@@ -193,8 +193,12 @@ written reason — never accept wholesale.
 `--verdict-lines`), wired on the gate's **ROOT label** (R1 evidence + the
 single `<label>-verdict.md`; per-round `-rN` evidence anchoring is the
 arbitration contract inside the verdict, not the checker's job — the checker
-asserts existence/shape, arbitration asserts round identity): the verdict file
-is the anti-confabulation anchor (below) —
+asserts existence/shape, arbitration asserts round identity). The `--vendors`
+passed are the R1 round's **ACTUALLY seated** vendors: a seat that degraded out
+of R1 (agy skip) is dropped from `--vendors` for that invocation and recorded
+as absent in the verdict — a static vendor list that demands evidence from a
+seat that never sat turns a legitimate degrade into a permanent red. The
+verdict file is the anti-confabulation anchor (below) —
 a gate whose GREEN lives only in conversation is exactly the 2026-07-10
 fabrication vector, and cross-session handoffs cite it as the sole verifiable
 record. Forward-only: do NOT retrofit pre-existing gate labels or repair old
@@ -252,7 +256,12 @@ Removing machinery is always fine; the gate is asymmetric by design.
   redesign of the mechanism — orchestrator decides autonomously (no user
   approval point; the review-fix loop is the wrong tool for a design defect).
   A redesign that deletes machinery or changes a cross-system contract goes
-  through Layer 0 (`smart-plan` Phase 4); the reworked design re-enters this
-  gate at R1. The 8-round cap below stays as the backstop for everything else.
+  through Layer 0 (`smart-plan` Phase 4). The reworked design re-enters THIS
+  gate on the **next monotonic round label** (`-rN+1` — never reuse/overwrite
+  earlier labels) with the **round counter NOT reset** (the oscillation already
+  spent those rounds; a reset would bypass the 8-round backstop); because the
+  round reviews a new design, it is a first-look round for seating — the
+  second seat returns for it (Seat cadence). The 8-round cap below stays as
+  the backstop for everything else.
 - **Escalation cap: 8 real rounds without GREEN → STOP, escalate to the user**
   (continue / restructure spec / abort). Never auto-green, never grind past.

@@ -110,3 +110,23 @@ diff header (git diff --stat, run at arbitration):
 | 1 | [MAJOR] README wiring example pairs `--gpt-dead` with `--vendors gpt,gemini` (checker still requires the gpt file → guaranteed gate failure); README:51 claims "GPT anchors" unconditionally | **ACCEPT** — split into normal / `-gpt` wiring examples (vendors must match the gate's actual R1 panel); degrade note now says the remaining seat anchors (GPT normally, Opus under -gpt, thin) |
 
 Round verdict: NEEDS-FIX → dispatch fix, R6 re-review.
+
+## Round 6 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r6-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ skills/xreview/SKILL.md | 17 +++++++++++++----
+ src/vendors.mjs         |  4 ++--
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] mandatory ROOT wiring + static R1 vendor list turns a legitimate agy degrade into a permanent red (no gemini evidence file exists) | **PARTIAL ACCEPT** — invocation-time rule added: `--vendors` = the R1 round's ACTUALLY seated vendors; a degraded seat is dropped and recorded absent in the verdict. Checker code changes REJECTED again (additive; existence/shape stays its whole job) |
+| 2 | [MAJOR] `src/vendors.mjs` degrade message says "GPT anchors" unconditionally — wrong instruction under -gpt | **ACCEPT** — message + comment now vendor-neutral ("the remaining seat anchors — see xreview degrade policy"); no smoke assertion existed on the old phrase (checked; smoke:223 concerns exec-wedge language, untouched) |
+| 3 | [MAJOR] oscillation "re-enters at R1" would reuse/overwrite the root label and reset/bypass the 8-round backstop | **ACCEPT** — reworked design continues on the next monotonic round label, counter NOT reset; the post-redesign round is a first-look round for seating (second seat returns) |
+
+Round verdict: NEEDS-FIX → dispatch fixes, R7 re-review.

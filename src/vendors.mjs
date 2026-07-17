@@ -731,7 +731,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
     // browser.go consumerOAuth 5s after a valid keyring load). Repeated interactive
     // OAuth is a Google account-risk-control exposure. So: FEW attempts, LONG backoff
     // (never cluster), and on final failure the caller SKIPS the Gemini seat for the
-    // round (GPT anchors; no seat-swap) — never hammer. A true TIMEOUT is not retried.
+    // round (the remaining seat anchors; no seat-swap) — never hammer. A true TIMEOUT is not retried.
     // The clean-context one-shot model is a VIRTUE (fresh independent review); a
     // persistent session would auth once but POLLUTE context — rejected. The only
     // deterministic escalation is a PTY (one-shot + fake TTY: no drip, still clean
@@ -857,7 +857,7 @@ export async function callVendor({ vendor, role, prompt, effort, cwd, family, ti
       lastErr = `exit ${r.exitCode}${r.stderr ? `: ${r.stderr.trim().slice(0, 200)}` : ""}`;
       // fast crash / transient re-login → retryable
     }
-    return { ok: false, commandLine, degrade: true, error: `agy failed after ${attemptsRun} gentle attempt(s): ${lastErr}. SKIP this Gemini seat for the round (GPT anchors; note Gemini absent in the verdict) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent) and do NOT seat-swap. Inspect ${path.join(AGY_HOME, "conversations")}` };
+    return { ok: false, commandLine, degrade: true, error: `agy failed after ${attemptsRun} gentle attempt(s): ${lastErr}. SKIP this Gemini seat for the round (the remaining seat anchors — see xreview degrade policy; note Gemini absent in the verdict) — do NOT re-invoke agy in a loop (clustered cold-starts provoke a browser OAuth re-consent) and do NOT seat-swap. Inspect ${path.join(AGY_HOME, "conversations")}` };
   }
 
   // gpt-only from here (the gemini branch returns in all paths above).
