@@ -130,3 +130,20 @@ diff header (git diff --stat, run at arbitration):
 | 3 | [MAJOR] oscillation "re-enters at R1" would reuse/overwrite the root label and reset/bypass the 8-round backstop | **ACCEPT** — reworked design continues on the next monotonic round label, counter NOT reset; the post-redesign round is a first-look round for seating (second seat returns) |
 
 Round verdict: NEEDS-FIX → dispatch fixes, R7 re-review.
+
+## Round 7 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r7-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ README.md | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] README wiring examples hardcode two vendor combos as if universal — gemini scenario (GPT+Opus) uncovered; degraded-R1 combos read as illegal | **ACCEPT** — examples now labeled as no-degrade illustrations, with the governing rule stated first: `--vendors` = R1's actually seated vendors (scenario table minus degraded seats); gemini-scenario example added |
+
+Round verdict: NEEDS-FIX → dispatch fix, R8 re-review.

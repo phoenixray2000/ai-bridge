@@ -117,9 +117,15 @@ claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\serv
 before a phase tags/merges — wire one line into a consuming repo's verify chain:
 
 ```
-# normal panel (GPT anchoring):
+# --vendors ALWAYS = the vendors that ACTUALLY sat the gate's R1 (per the
+# route scenario table, minus any seat that degraded out — an agy-skip round
+# drops gemini from the list; demanding evidence from a seat that never sat
+# is a permanent false red). Illustrations (no-degrade cases):
+# default scenarios (panel GPT + Gemini):
 node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews --verdict --verdict-lines
-# -gpt (GPT quota dead — vendors must match the gate's ACTUAL R1 panel):
+# gemini scenario (panel GPT + Opus):
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,opus --dir docs/reviews --verdict --verdict-lines
+# -gpt (GPT quota dead; e.g. sonnet/opus scenario → Gemini + Opus):
 node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gemini,opus --dir docs/reviews --verdict --verdict-lines --gpt-dead
 ```
 
