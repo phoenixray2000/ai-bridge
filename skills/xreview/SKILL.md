@@ -112,9 +112,11 @@ which is why this never surfaced before batch-E). So for the **Gemini seat**:
    native stdout as UTF-16 and corrupts the diff file).
 2. The prompt references that file (plus changed paths / spec path) and states
    explicitly: **"只读文件,禁跑任何命令(沙箱会 auto-deny)"**.
-3. DELETE the materialized diff file once the Gemini-seated round is collected
-   and arbitrated — before that round's commit checkpoint (it's scratch, not
-   evidence; under Seat cadence later rounds never need it).
+3. EVERY Gemini-seated round materializes its OWN diff file for that round's
+   range (matters under `-gpt`, where the seat persists past R1) — never reuse
+   a previous round's file (stale snapshot). DELETE it once the round is
+   collected and arbitrated — before that round's commit checkpoint (scratch,
+   not evidence).
 
 The **GPT seat is unchanged** — codex runs danger-full-access and runs git
 itself; do NOT feed it the materialized diff (live git beats a stale snapshot).

@@ -54,3 +54,22 @@ convention). Fix-stage diff header (git diff --stat, run at arbitration):
 | 4 | [MAJOR] smart-plan still restates cadence + degrade composition locally | **PARTIAL ACCEPT** — composition restatements stripped (flake line now pure delegation); the plan-gate MAPPING ("here that means plan-track R1 / closing R1") stays — it maps which gates exist in the plan flow, it does not duplicate composition; plan-review's fixed R1 panel stays (reviewer itself marked it plan-specific) |
 
 Round verdict: NEEDS-FIX → dispatch fixes, R3 re-review.
+
+## Round 3 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r3-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ skills/smart-plan/SKILL.md | 15 +++++++++------
+ skills/xreview/SKILL.md    |  8 +++++---
+ 2 files changed, 14 insertions(+), 9 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] materialized-diff lifecycle said "later rounds never need it" — false under -gpt (Gemini seated R2+); smart-plan's file list same gap | **ACCEPT** — every Gemini-seated round materializes its own per-round diff, no cross-round reuse; smart-plan synced |
+| 2 | [MAJOR] smart-plan Layer-0 evidence naming fixed at `plan-<name>-<vendor>.md`, conflicting with per-round labels | **ACCEPT** — R2+ evidence uses `plan-<name>-rN-<vendor>.md`; the single `plan-<name>-verdict.md` stays, its per-round sections cite that round's labeled files |
+
+Round verdict: NEEDS-FIX → dispatch fixes, R4 re-review.

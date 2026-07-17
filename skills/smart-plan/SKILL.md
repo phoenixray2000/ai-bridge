@@ -155,8 +155,9 @@ the user.
   call — malformed output must fail the job, not reach arbitration). The
   **Gemini seat's prompt must forbid running commands**(「只读文件,禁跑任何
   命令——沙箱 auto-deny」): agy reviews headless `--sandbox`, command tools are
-  auto-denied; anything it needs (plan, spec, the closing gate's materialized
-  diff) must exist AS A FILE — materialize a diff with `git diff --output=docs/reviews/<label>-diff.txt ...`
+  auto-denied; anything it needs (plan, spec, and — on any Gemini-seated round
+  that reviews changes — that round's own materialized diff/delta) must exist
+  AS A FILE — materialize a diff with `git diff --output=docs/reviews/<label>-diff.txt ...`
   (never shell `>` — PS5.1 re-encodes to UTF-16; ensure `docs/reviews` exists
   first, `--output` does not create directories)
   if the round reviews changes, and delete it after the round (xreview
@@ -187,10 +188,12 @@ the user.
   8. **Reality-premise grounding** — every prod-data / environment /
      consumer-set premise has an on-site grounding step before its dependent
      task? An ungrounded one is a finding.
-- **Evidence + arbitration** — per vendor:
-  `<repo>/docs/reviews/plan-<name>-<vendor>.md`; orchestrator
-  arbitrates into `plan-<name>-verdict.md` (never vendor-merged). Apply the
-  **additive-finding gate** (xreview, SPOT).
+- **Evidence + arbitration** — per vendor, per ROUND label (xreview evidence
+  rule, SPOT): R1 `<repo>/docs/reviews/plan-<name>-<vendor>.md`, R2+
+  `plan-<name>-rN-<vendor>.md` — never overwrite a previous round's evidence.
+  The orchestrator arbitrates into the single `plan-<name>-verdict.md`, whose
+  per-round sections cite only that round's labeled files (never
+  vendor-merged). Apply the **additive-finding gate** (xreview, SPOT).
 - **Verdict records the convergence trajectory** — per real round: findings
   count + max severity + did the architecture settle? Rising count from
   REMOVING machinery = healthy; from ADDING machinery = scope-creep warning
