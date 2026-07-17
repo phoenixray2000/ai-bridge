@@ -147,3 +147,25 @@ diff header (git diff --stat, run at arbitration):
 | 1 | [MAJOR] README wiring examples hardcode two vendor combos as if universal — gemini scenario (GPT+Opus) uncovered; degraded-R1 combos read as illegal | **ACCEPT** — examples now labeled as no-degrade illustrations, with the governing rule stated first: `--vendors` = R1's actually seated vendors (scenario table minus degraded seats); gemini-scenario example added |
 
 Round verdict: NEEDS-FIX → dispatch fix, R8 re-review.
+
+## Round 8 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r8-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ docs/model-selection-methodology.md |  5 +++--
+ skills/route/SKILL.md               |  6 +++---
+ skills/smart-plan/SKILL.md          |  6 +++---
+ skills/xreview/SKILL.md             | 11 ++++++-----
+ 4 files changed, 15 insertions(+), 13 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] cadence summaries say "first round only" absolutely, contradicting R6#3's post-redesign first-look re-seating | **ACCEPT** — cadence unified as "second seat sits FIRST-LOOK rounds only (a gate's R1 + the post-redesign round after an oscillation exit)"; xreview frontmatter/section, route, smart-plan, methodology errata all synced |
+
+Round verdict: NEEDS-FIX (fix applied). **8-round cap HIT → loop stopped,
+escalated to the user per the cap rule** (superpowers-cut-0.12.0 precedent).
+Awaiting user disposition for a confirmation round.

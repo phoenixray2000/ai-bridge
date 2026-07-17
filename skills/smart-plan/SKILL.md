@@ -139,9 +139,9 @@ the user.
   solo-caught MAJORs both other voices missed).
   - `-gpt` (quota dead) → Gemini + clean-window Opus, **flag the round as thin
     on independence** (Opus reviewer = author's family). Never Gemini-only.
-  - **Gemini seat = each gate's FIRST round only — xreview「Seat cadence」
-    (SPOT, incl. the `-gpt` exception)**; here that means plan-track R1 and
-    the closing gate's R1. (Gemini's plan value is narrow — design-eye
+  - **Gemini seat = first-look rounds only — xreview「Seat cadence」(SPOT,
+    incl. the `-gpt` exception and the post-redesign first-look round)**; here
+    that normally means plan-track R1 and the closing gate's R1. (Gemini's plan value is narrow — design-eye
     findings — against a ledger of hallucinated findings, missed BLOCKERs,
     rogue edits. The anchor seat alone is NOT the forbidden Gemini-solo: the
     gold standard is present; independence is preserved at the heaviest

@@ -66,9 +66,9 @@ escalation (Step 5).
 - **GPT is MANDATORY in every gating panel while it has quota** — see xreview
   「铁律」(SPOT). Single-vendor Gemini gates are forbidden; lightness =
   frequency (fewer/smaller phases), never vendor-dropping.
-- **The panel above is each gate's ROUND-1 panel** — from R2 seating follows
-  xreview「Seat cadence」(SPOT, incl. the `-gpt` exception); never restate the
-  composition here.
+- **The panel above is each gate's FIRST-LOOK-round panel** — all other
+  seating follows xreview「Seat cadence」(SPOT, incl. the `-gpt` exception and
+  the post-redesign first-look round); never restate the composition here.
 - The executor's own vendor leaves the panel only when it isn't GPT (gemini
   scenario → Opus takes the seat). Orchestrator two-stage is always on top.
 - **This table is for CODE review only.** Plan review (Layer 0) uses a FIXED

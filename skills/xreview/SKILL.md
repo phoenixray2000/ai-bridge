@@ -1,6 +1,6 @@
 ---
 name: xreview
-description: Cross-vendor adversarial review of a diff. Use at phase boundaries or whenever you want independent outside opinions on a change. Panel seating follows the in-file Seat-cadence rule (second seat sits each gate's first round only); pass a single vendor to restrict. Each vendor's raw output lands in its own evidence file; you (orchestrator) arbitrate into a verdict file — vendors never merge each other's findings.
+description: Cross-vendor adversarial review of a diff. Use at phase boundaries or whenever you want independent outside opinions on a change. Panel seating follows the in-file Seat-cadence rule (second seat sits first-look rounds only — a gate's R1 and the post-redesign round after an oscillation exit); pass a single vendor to restrict. Each vendor's raw output lands in its own evidence file; you (orchestrator) arbitrate into a verdict file — vendors never merge each other's findings.
 ---
 
 # xreview — cross-vendor review
@@ -25,11 +25,12 @@ Per-scenario panel (canonical table in `route`):
 `-gpt` swaps GPT's slot for a **clean-window Opus 4.8 medium** subagent (fresh
 `model: opus`, own evidence file `<label>-opus.md`).
 
-### Seat cadence — second seat sits each gate's FIRST round only (SPOT)
+### Seat cadence — second seat sits FIRST-LOOK rounds only (SPOT)
 
-The panel above is the **round-1 panel of each gate**. From round 2 of the same
-gate, the second seat (Gemini; Opus medium in the gemini scenario) stands down —
-**R2+ runs GPT-solo**. Grounding (2026-06/07 month audit): the second seat's
+The panel above is the panel of a gate's **first-look rounds**: its R1, and —
+after an oscillation exit (Loop convergence below) — the first round reviewing
+the reworked design. On every other round the second seat (Gemini; Opus medium
+in the gemini scenario) stands down — **GPT-solo**. Grounding (2026-06/07 month audit): the second seat's
 real catches concentrate at first seating (design-eye / enumeration
 completeness / fresh-perspective findings); R2+ rounds verify fixes, which is
 exactly where Gemini's misfire mode lives (19 of 21 arbitrated false positives
