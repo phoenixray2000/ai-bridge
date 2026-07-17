@@ -48,7 +48,8 @@ Reliability:
   store either). The bridge does a **bounded, de-clustered retry** (2 attempts,
   8s backoff — clustered cold-starts provoke a browser OAuth re-consent, an
   account-risk exposure; never stress-test agy). Exhausted → `degrade: true`:
-  the caller SKIPS the Gemini seat for the round (GPT anchors), never loops.
+  the caller SKIPS the Gemini seat for the round (the remaining seat anchors —
+  GPT normally, Opus under `-gpt`, flagged thin), never loops.
   Policy has offline tests (`scripts/smoke.mjs`, injected runner).
 - **codex --json**: clean answer text, session id (feeds `resume` for
   managed-loop fix rounds), token usage.
@@ -116,7 +117,10 @@ claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\serv
 before a phase tags/merges — wire one line into a consuming repo's verify chain:
 
 ```
-node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews --verdict --verdict-lines [--gpt-dead]
+# normal panel (GPT anchoring):
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews --verdict --verdict-lines
+# -gpt (GPT quota dead — vendors must match the gate's ACTUAL R1 panel):
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gemini,opus --dir docs/reviews --verdict --verdict-lines --gpt-dead
 ```
 
 Dual-sign = all listed vendor files present and non-empty; `--verdict` requires

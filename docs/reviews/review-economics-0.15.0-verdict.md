@@ -93,3 +93,20 @@ diff header (git diff --stat, run at arbitration):
 | 3 | [MAJOR] README gate-wiring example still marks --verdict/--verdict-lines optional | **ACCEPT** — README updated: both mandatory on new wirings, legacy/ad-hoc exemption noted, ROOT-label wiring documented |
 
 Round verdict: NEEDS-FIX → dispatch fixes, R5 re-review.
+
+## Round 5 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r5-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ README.md | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] README wiring example pairs `--gpt-dead` with `--vendors gpt,gemini` (checker still requires the gpt file → guaranteed gate failure); README:51 claims "GPT anchors" unconditionally | **ACCEPT** — split into normal / `-gpt` wiring examples (vendors must match the gate's actual R1 panel); degrade note now says the remaining seat anchors (GPT normally, Opus under -gpt, thin) |
+
+Round verdict: NEEDS-FIX → dispatch fix, R6 re-review.
