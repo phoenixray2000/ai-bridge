@@ -6,6 +6,13 @@
 > 二者若冲突,**以 skill 为准**,并回来刷新本文档。本文档定期刷新,不必与 skill 逐字同步。
 > (2026-06-16 从 collab-runtime 迁入本仓——方法论属于实现它的插件,不属于消费方仓库。)
 >
+> **2026-07-17 勘误指针**:第二评审席的席位节奏已统一为 xreview「Seat cadence」
+> (SPOT)——第二席(Gemini;gemini 场景为 Opus)只坐**每个 gate 的首轮**,R2+ 由
+> GPT 单席锚定;`-gpt` 降级面板例外(全轮双席)。文中旧的「plan R1 + closing
+> gate only / middle rounds GPT-solo」等表述均被其取代,以 skill 为准。
+> 依据:2026-06/07 月度实证(19/21 误报为 Gemini 且集中于修复验证轮;真实捕获
+> 集中于首次入席),同批新增:振荡出口、gate 接线 `--verdict` 强制、相位 ≤8 task 硬顶。
+>
 > 定稿于 2026-06-11，源自 CCS modular refactor（Phase A）的实践。
 > 适用范围：所有 spec → plan → subagent 执行 → review 的开发流程；不限于 CCS。
 > 从 Phase B 起，每个 plan 的 task 必须带「复杂度」字段（低/高）+ 可选「critical」旗标，执行时按 复杂度 × 当期执行场景查 §3.2 得出模型；critical 正交，= 抬档 + 更小心 + 该 task 独占一个 phase（不再触发 task 级审）。

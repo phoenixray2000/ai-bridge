@@ -66,6 +66,9 @@ escalation (Step 5).
 - **GPT is MANDATORY in every gating panel while it has quota** — see xreview
   「铁律」(SPOT). Single-vendor Gemini gates are forbidden; lightness =
   frequency (fewer/smaller phases), never vendor-dropping.
+- **The panel above is each gate's ROUND-1 panel** — from R2 seating follows
+  xreview「Seat cadence」(SPOT, incl. the `-gpt` exception); never restate the
+  composition here.
 - The executor's own vendor leaves the panel only when it isn't GPT (gemini
   scenario → Opus takes the seat). Orchestrator two-stage is always on top.
 - **This table is for CODE review only.** Plan review (Layer 0) uses a FIXED
@@ -208,7 +211,10 @@ When the last task goes green, do NOT declare done:
    when the gate closes.
 2. Arbitrate into `final-<plan-name>-verdict.md` (additive-finding gate applies).
 3. Dispatch confirmed fixes through the managed loop, re-verify.
-4. **Re-run the WHOLE-diff xreview until `VERDICT: GREEN`.**
+4. **Re-run the WHOLE-diff xreview until `VERDICT: GREEN`** — re-run rounds
+   seat per xreview「Seat cadence」(SPOT); the materialized diff file is only
+   needed on rounds where the Gemini seat sits, and is deleted when that
+   round closes (xreview Gemini-seat rule).
 5. Commit checkpoint per ROUND, not per gate: each round's evidence/verdict
    commits at arbitration (red rounds included — BEFORE dispatching that
    round's fixes); the final green round's commit is the gate's last act.

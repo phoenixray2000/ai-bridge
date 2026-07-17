@@ -77,8 +77,11 @@ Dispatch an Agent as the **planner** role (`route` role table; now
   from its own phase's boundary review, firing **before any consumer wires in**
   (catches type-correct-but-semantically-wrong interfaces the compiler can't).
   Never bury a critical task in a multi-task phase.
-- **Keep phases small** — phase-boundary review is the ONLY execution-stage
-  cross-vendor layer; small phases make it fire while work is fresh.
+- **Keep phases small — hard cap 8 tasks per phase.** Phase-boundary review is
+  the ONLY execution-stage cross-vendor layer; with no per-task review beneath
+  it, an oversized phase turns its gate into a huge-batch review (multi-round
+  blowup, 60min+ vendor runs). More than 8 tasks → split the phase; likewise
+  split when a phase's expected diff would exceed ~100 files.
 - **When a visual contract exists**: every UI task carries the relevant
   load-bearing assertions as acceptance, and its verify asserts them at the
   **DOM/structural level against RENDERED output** — not a pixel-diff (brittle),
@@ -109,6 +112,7 @@ Bounce the plan back if any of these is missing:
   closing gate's whole-diff range;
 - every task has `complexity`;
 - **every `critical` task sits in its own phase**;
+- **no phase exceeds 8 tasks** (Phase-2 hard cap);
 - finishing/deletion tasks reserve the final "whole-repo zero-reference" check
   for the orchestrator;
 - the plan ends with the closing whole-implementation xreview gate;
@@ -135,27 +139,31 @@ the user.
   solo-caught MAJORs both other voices missed).
   - `-gpt` (quota dead) → Gemini + clean-window Opus, **flag the round as thin
     on independence** (Opus reviewer = author's family). Never Gemini-only.
-  - **Gemini seat = R1 + closing gate only; middle rounds GPT-solo.** (Gemini's
-    plan value is narrow — design-eye findings — against a ledger of
-    hallucinated findings, missed BLOCKERs, rogue edits. GPT-solo is NOT the
-    forbidden Gemini-solo: the gold standard is present; independence is
-    preserved at the two heaviest gates.)
+  - **Gemini seat = each gate's FIRST round only — xreview「Seat cadence」
+    (SPOT, incl. the `-gpt` exception)**; here that means plan-track R1 and
+    the closing gate's R1. (Gemini's plan value is narrow — design-eye
+    findings — against a ledger of hallucinated findings, missed BLOCKERs,
+    rogue edits. The anchor seat alone is NOT the forbidden Gemini-solo: the
+    gold standard is present; independence is preserved at the heaviest
+    gates' first look.)
   - **agy flake** → one internal retry happens inside the review job; if it still
-    fails, skip Gemini this round (GPT anchors, note the absence). Never loop
-    agy, never seat-swap (xreview degrade policy, SPOT).
+    fails, skip Gemini this round (the anchor seat carries it — GPT, or Opus
+    under `-gpt`, flagged thin; note the absence). Never loop agy, never
+    seat-swap (xreview degrade policy, SPOT).
 - **By reference, async** — `ai_review_start` with `cwd`, prompt gives spec
   path + plan path; reviewers read from disk, **`expect_verdict: true`** (gate
   call — malformed output must fail the job, not reach arbitration). The
   **Gemini seat's prompt must forbid running commands**(「只读文件,禁跑任何
   命令——沙箱 auto-deny」): agy reviews headless `--sandbox`, command tools are
-  auto-denied; anything it needs (plan, spec, R2+ 的 delta diff) must exist AS
-  A FILE — materialize a diff with `git diff --output=docs/reviews/<label>-diff.txt ...`
+  auto-denied; anything it needs (plan, spec, the closing gate's materialized
+  diff) must exist AS A FILE — materialize a diff with `git diff --output=docs/reviews/<label>-diff.txt ...`
   (never shell `>` — PS5.1 re-encodes to UTF-16; ensure `docs/reviews` exists
   first, `--output` does not create directories)
   if the round reviews changes, and delete it after the round (xreview
-  Gemini-seat rule; GPT seat unchanged — it runs git itself). Start both
-  vendors, collect each with `ai_job_result` (repeat while running — never
-  re-start; lost job_id after a crash → `ai_job_list`).
+  Gemini-seat rule; GPT seat unchanged — it runs git itself). Start the
+  round's seated vendors (Seat cadence, SPOT), collect each with
+  `ai_job_result` (repeat while running — never re-start; lost job_id after
+  a crash → `ai_job_list`).
 - **R1 full, R2+ delta.** R1 reviews the whole plan; from R2 review only the
   fixes to the previous round's findings + the plan's changed sections. (Plan
   review only — the closing gate stays literal whole-diff: code regresses

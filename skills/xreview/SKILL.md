@@ -1,6 +1,6 @@
 ---
 name: xreview
-description: Cross-vendor adversarial review of a diff. Use at phase boundaries or whenever you want independent outside opinions on a change. Defaults to both vendors (GPT + Gemini) in parallel; pass a single vendor to restrict. Each vendor's raw output lands in its own evidence file; you (orchestrator) arbitrate into a verdict file — vendors never merge each other's findings.
+description: Cross-vendor adversarial review of a diff. Use at phase boundaries or whenever you want independent outside opinions on a change. Panel seating follows the in-file Seat-cadence rule (second seat sits each gate's first round only); pass a single vendor to restrict. Each vendor's raw output lands in its own evidence file; you (orchestrator) arbitrate into a verdict file — vendors never merge each other's findings.
 ---
 
 # xreview — cross-vendor review
@@ -25,6 +25,21 @@ Per-scenario panel (canonical table in `route`):
 `-gpt` swaps GPT's slot for a **clean-window Opus 4.8 medium** subagent (fresh
 `model: opus`, own evidence file `<label>-opus.md`).
 
+### Seat cadence — second seat sits each gate's FIRST round only (SPOT)
+
+The panel above is the **round-1 panel of each gate**. From round 2 of the same
+gate, the second seat (Gemini; Opus medium in the gemini scenario) stands down —
+**R2+ runs GPT-solo**. Grounding (2026-06/07 month audit): the second seat's
+real catches concentrate at first seating (design-eye / enumeration
+completeness / fresh-perspective findings); R2+ rounds verify fixes, which is
+exactly where Gemini's misfire mode lives (19 of 21 arbitrated false positives
+were Gemini's, incl. one 8-false-BLOCKER "not implemented" hallucination against
+fully implemented code) — every misfire burns Claude-pool arbitration plus the
+mandatory post-Gemini `git status` rogue check. 铁律 is untouched: GPT anchors
+every round, and GPT-solo is not the forbidden Gemini-solo. Exception: under
+`-gpt` the degraded panel (Gemini + Opus) keeps both seats all rounds — with no
+GPT anchor, dropping a seat would leave a single voice on a gate.
+
 ### 铁律 — GPT is MANDATORY in any gating review while it has quota
 
 A gating review (Layer 0 / phase boundary / closing gate) **must include GPT**
@@ -42,7 +57,9 @@ gate `check-review-evidence.mjs` fails loud on it unless `--gpt-dead`).
 The review job already retries agy once internally (2 attempts, 8s de-clustered
 backoff — recovers most flakes without provoking OAuth; only *clustered* rapid
 restarts do). If it still fails (`degrade: true`): **skip the Gemini seat this
-round** — GPT-solo (铁律 holds), note Gemini absent in the verdict. Do NOT loop
+round** — GPT-solo (铁律 holds; under `-gpt` the Opus seat carries the round
+alone — single voice, **flag the round as thin**), note Gemini absent in the
+verdict. Do NOT loop
 agy on top of the internal retry (clustered cold-starts provoke a browser OAuth
 re-consent — account-risk exposure), do NOT spin up a clean-Opus substitute
 (that is only for `-gpt`). A flake does not advance the round counter.
@@ -58,7 +75,10 @@ double-launch). Per panel vendor, `ai_review_start` with:
 - `prompt`: instructions + references — diff range (GPT: `git diff
   <base>..<head>`; Gemini: the materialized diff FILE), changed paths, spec path.
 - `effort`: default high; **xhigh for cutover diffs**.
-- `evidence_path`: `<repo>/docs/reviews/<label>-<vendor>.md`.
+- `evidence_path`: `<repo>/docs/reviews/<label>-<vendor>.md`. **Rounds get
+  distinct labels** (`<label>-r2`, `-r3`, …) — never overwrite a previous
+  round's evidence; a round's verdict may cite only files bearing THAT round's
+  label (feeds Verdict-anchoring fact 2).
 - `expect_verdict: true` — **mandatory on every gate call** (phase / Layer 0 /
   closing). The job then FAILS instead of completing when the output lacks the
   terminal `VERDICT:` line — a malformed review can never reach arbitration as
@@ -91,15 +111,17 @@ which is why this never surfaced before batch-E). So for the **Gemini seat**:
    native stdout as UTF-16 and corrupts the diff file).
 2. The prompt references that file (plus changed paths / spec path) and states
    explicitly: **"只读文件,禁跑任何命令(沙箱会 auto-deny)"**.
-3. After the gate completes, DELETE the materialized diff file (it's scratch,
-   not evidence).
+3. DELETE the materialized diff file once the Gemini-seated round is collected
+   and arbitrated — before that round's commit checkpoint (it's scratch, not
+   evidence; under Seat cadence later rounds never need it).
 
 The **GPT seat is unchanged** — codex runs danger-full-access and runs git
 itself; do NOT feed it the materialized diff (live git beats a stale snapshot).
 Rejected alternative: granting agy a command allow-rule — a review seat with
 arbitrary command execution violates read-only, and agy has a rogue-edit record.
 
-Start BOTH vendors first, then collect each with `ai_job_result` (long-polls
+Start every vendor the Seat-cadence rule seats this round first, then collect
+each with `ai_job_result` (long-polls
 300s; while it reports running, call it again — do NOT re-start). After a
 session crash/restart, `ai_job_result` with the old job_id recovers the
 finished review instead of re-running it; if the job_id is lost with the dead
@@ -163,6 +185,15 @@ source / accepted-or-rejected / reason / dispatch target. Confirmed fixes dispat
 → executor, subtle → orchestrator direct); false positives rejected with a
 written reason — never accept wholesale.
 
+**Gate wiring must enforce the verdict file** — any NEW
+`check-review-evidence.mjs` wiring for a gate label passes `--verdict` (and
+`--verdict-lines`): the verdict file is the anti-confabulation anchor (below) —
+a gate whose GREEN lives only in conversation is exactly the 2026-07-10
+fabrication vector, and cross-session handoffs cite it as the sole verifiable
+record. Forward-only: do NOT retrofit pre-existing gate labels or repair old
+evidence-only series; ad-hoc one-shot reviews never wire the checker and owe no
+verdict.
+
 ### Verdict anchoring — command output only, never memory (anti-confabulation)
 
 The verdict's three load-bearing facts must be pasted from commands run NOW,
@@ -203,5 +234,18 @@ Removing machinery is always fine; the gate is asymmetric by design.
 - **A flake is not a round.** agy empty-stdout / GPT token_revoked are handled
   WITHIN the round (retry / skip seat per the degrade policy); only a
   findings-producing pass advances the counter.
+- **Oscillation exit: 2 consecutive rounds of same-family BLOCKER/MAJOR on the
+  SAME mechanism → stop looping, redesign that mechanism.** Same-family test:
+  each round's accepted fix is another patch on the same lock / state machine /
+  path convention (grounded: plan-wechat-storage-unification burned R2–R4
+  finding new races in one hand-rolled lock; the converging move was DELETING
+  the mechanism, available two rounds earlier). At arbitration, judge the
+  family; on the second consecutive hit, the verdict records the oscillation
+  call + reason, and the exit switches from "dispatch fixes, next round" to a
+  redesign of the mechanism — orchestrator decides autonomously (no user
+  approval point; the review-fix loop is the wrong tool for a design defect).
+  A redesign that deletes machinery or changes a cross-system contract goes
+  through Layer 0 (`smart-plan` Phase 4); the reworked design re-enters this
+  gate at R1. The 8-round cap below stays as the backstop for everything else.
 - **Escalation cap: 8 real rounds without GREEN → STOP, escalate to the user**
   (continue / restructure spec / abort). Never auto-green, never grind past.
