@@ -168,4 +168,13 @@ diff header (git diff --stat, run at arbitration):
 
 Round verdict: NEEDS-FIX (fix applied). **8-round cap HIT → loop stopped,
 escalated to the user per the cap rule** (superpowers-cut-0.12.0 precedent).
-Awaiting user disposition for a confirmation round.
+
+## Round 9 (2026-07-17, user-approved past-cap confirmation round)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r9-gpt.md (non-empty, this round; GPT-solo).
+No findings. **VERDICT: GREEN** — loop closed.
+
+Trajectory: 7→4→2→3→1→3→1→1→0 (24 findings: 19 accept, 3 partial, 2 rejected
+with written reasons). No oscillation trigger (no same-family consecutive
+rounds). Cap escalation exercised as designed.
