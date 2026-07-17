@@ -147,9 +147,9 @@ the user.
     gold standard is present; independence is preserved at the heaviest
     gates' first look.)
   - **agy flake** → one internal retry happens inside the review job; if it still
-    fails, skip Gemini this round (the anchor seat carries it — GPT, or Opus
-    under `-gpt`, flagged thin; note the absence). Never loop agy, never
-    seat-swap (xreview degrade policy, SPOT).
+    fails, skip Gemini this round and note the absence — who carries the round
+    is xreview's degrade policy (SPOT), never restated here. Never loop agy,
+    never seat-swap.
 - **By reference, async** — `ai_review_start` with `cwd`, prompt gives spec
   path + plan path; reviewers read from disk, **`expect_verdict: true`** (gate
   call — malformed output must fail the job, not reach arbitration). The

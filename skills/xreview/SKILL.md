@@ -37,8 +37,9 @@ were Gemini's, incl. one 8-false-BLOCKER "not implemented" hallucination against
 fully implemented code) — every misfire burns Claude-pool arbitration plus the
 mandatory post-Gemini `git status` rogue check. 铁律 is untouched: GPT anchors
 every round, and GPT-solo is not the forbidden Gemini-solo. Exception: under
-`-gpt` the degraded panel (Gemini + Opus) keeps both seats all rounds — with no
-GPT anchor, dropping a seat would leave a single voice on a gate.
+`-gpt` the degraded R1 panel carries UNCHANGED through all rounds — with no GPT
+anchor there is no strong solo seat to stand down to (`gemini -gpt` stays
+Opus-only every round, thin, keep saying so).
 
 ### 铁律 — GPT is MANDATORY in any gating review while it has quota
 

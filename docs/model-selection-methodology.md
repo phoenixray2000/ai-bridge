@@ -8,7 +8,7 @@
 >
 > **2026-07-17 勘误指针**:第二评审席的席位节奏已统一为 xreview「Seat cadence」
 > (SPOT)——第二席(Gemini;gemini 场景为 Opus)只坐**每个 gate 的首轮**,R2+ 由
-> GPT 单席锚定;`-gpt` 降级面板例外(全轮双席)。文中旧的「plan R1 + closing
+> GPT 单席锚定;`-gpt` 例外(降级后的 R1 面板原样延续所有轮次)。文中旧的「plan R1 + closing
 > gate only / middle rounds GPT-solo」等表述均被其取代,以 skill 为准。
 > 依据:2026-06/07 月度实证(19/21 误报为 Gemini 且集中于修复验证轮;真实捕获
 > 集中于首次入席),同批新增:振荡出口、gate 接线 `--verdict` 强制、相位 ≤8 task 硬顶。

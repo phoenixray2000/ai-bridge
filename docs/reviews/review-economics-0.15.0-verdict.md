@@ -31,3 +31,26 @@ Evidence: review-economics-0.15.0-gpt.md (non-empty, this round). Gemini absent
 | 7 | [MINOR] methodology doc stale cadence statements | **ACCEPT as dated errata note** — doc is rationale/history and self-disclaims vs skills; one dated pointer, no history rewrite |
 
 Round verdict: NEEDS-FIX → dispatch fixes, R2 re-review.
+
+## Round 2 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD` (post-R1-fix). Evidence:
+review-economics-0.15.0-r2-gpt.md (non-empty, this round; GPT-solo per dogfood
+convention). Fix-stage diff header (git diff --stat, run at arbitration):
+
+```
+ docs/model-selection-methodology.md | 2 +-
+ skills/route/SKILL.md               | 4 ++--
+ skills/smart-plan/SKILL.md          | 6 +++---
+ skills/xreview/SKILL.md             | 5 +++--
+ 4 files changed, 9 insertions(+), 8 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] route closing-gate step 1 still says "delete that diff file when the gate closes" — conflicts with the new Gemini-seated-round lifecycle | **ACCEPT** — defer to xreview lifecycle |
+| 2 | [MAJOR] xreview Seat-cadence -gpt exception phrased "keeps both seats" — conflicts with `gemini -gpt` = Opus-only panel | **ACCEPT** — rephrased as "degraded R1 panel carries unchanged through all rounds"; methodology errata synced |
+| 3 | [MAJOR] oscillation exit limits Layer-0 routing to CROSS-SYSTEM contract changes; reviewer wants ALL contract-changing redesigns | **REJECT** — the authoritative agreement (user, 2026-07-17) scopes Layer-0 to machinery-deletion OR cross-system contract change; the reviewer graded against drifted prompt wording, not the contract. Local redesigns are covered by gate re-entry at R1. |
+| 4 | [MAJOR] smart-plan still restates cadence + degrade composition locally | **PARTIAL ACCEPT** — composition restatements stripped (flake line now pure delegation); the plan-gate MAPPING ("here that means plan-track R1 / closing R1") stays — it maps which gates exist in the plan flow, it does not duplicate composition; plan-review's fixed R1 panel stays (reviewer itself marked it plan-specific) |
+
+Round verdict: NEEDS-FIX → dispatch fixes, R3 re-review.
