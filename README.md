@@ -116,13 +116,19 @@ claude mcp add -s user ai-bridge -- node --no-warnings D:\git\ai-bridge\src\serv
 before a phase tags/merges — wire one line into a consuming repo's verify chain:
 
 ```
-node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews [--verdict] [--verdict-lines] [--gpt-dead]
+node <ai-bridge>/scripts/check-review-evidence.mjs --label phase-b --vendors gpt,gemini --dir docs/reviews --verdict --verdict-lines [--gpt-dead]
 ```
 
-Dual-sign = all listed vendor files present and non-empty; `--verdict` also
-requires the arbitration record; `--verdict-lines` enforces the terminal
-`VERDICT: GREEN|NEEDS-FIX` line per vendor file; GPT missing without
-`--gpt-dead` fails loud (single-vendor Gemini gates are forbidden). Repo-agnostic.
+Dual-sign = all listed vendor files present and non-empty; `--verdict` requires
+the arbitration record (the anti-confabulation anchor) and `--verdict-lines`
+enforces the terminal `VERDICT: GREEN|NEEDS-FIX` line per vendor file — **both
+are MANDATORY on any new gate wiring** (xreview verdict-wiring rule; omitting
+them is legal only on pre-existing legacy labels — forward-only, no retrofit —
+and ad-hoc one-shot reviews never wire the checker at all). Wire the gate's
+ROOT label (R1 evidence + the single `<label>-verdict.md`); per-round `-rN`
+evidence anchoring is the arbitration contract inside the verdict file, not the
+checker's job. GPT missing without `--gpt-dead` fails loud (single-vendor
+Gemini gates are forbidden). Repo-agnostic.
 
 ## Usage notes
 

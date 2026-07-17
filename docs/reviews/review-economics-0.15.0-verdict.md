@@ -73,3 +73,23 @@ diff header (git diff --stat, run at arbitration):
 | 2 | [MAJOR] smart-plan Layer-0 evidence naming fixed at `plan-<name>-<vendor>.md`, conflicting with per-round labels | **ACCEPT** — R2+ evidence uses `plan-<name>-rN-<vendor>.md`; the single `plan-<name>-verdict.md` stays, its per-round sections cite that round's labeled files |
 
 Round verdict: NEEDS-FIX → dispatch fixes, R4 re-review.
+
+## Round 4 (2026-07-17)
+
+Whole-diff re-review of `170d809..HEAD`. Evidence:
+review-economics-0.15.0-r4-gpt.md (non-empty, this round; GPT-solo). Fix-stage
+diff header (git diff --stat, run at arbitration):
+
+```
+ README.md               | 16 +++++++++++-----
+ skills/xreview/SKILL.md |  8 ++++++--
+ 2 files changed, 17 insertions(+), 7 deletions(-)
+```
+
+| # | finding | ruling |
+|---|---|---|
+| 1 | [MAJOR] per-round labels vs single verdict vs checker's single --label derivation — R2+ label wiring can't find a verdict / root wiring "mis-verifies" R1 evidence | **PARTIAL ACCEPT** — resolved by pinning the convention in text: checker wires the gate's ROOT label (R1 evidence + single verdict; existence/shape only), round identity is the arbitration contract inside the verdict. Checker redesign REJECTED (additive; forward-only scope) |
+| 2 | [MAJOR] materialized diff in docs/reviews = dirty tree at every Gemini-seated round's dispatch, violating CLEAN-TREE INVARIANT | **REJECT** — review-job launches are not guarded dispatches (the dirty-tree guard sits on `ai_exec_start`); mid-round evidence files are equally uncommitted, so the scratch adds no new dirty-state class; the lifecycle deletes it at arbitration, BEFORE any guarded fix dispatch or round commit. Relocation to a git-ignored dir is additive machinery with no failing scenario. |
+| 3 | [MAJOR] README gate-wiring example still marks --verdict/--verdict-lines optional | **ACCEPT** — README updated: both mandatory on new wirings, legacy/ad-hoc exemption noted, ROOT-label wiring documented |
+
+Round verdict: NEEDS-FIX → dispatch fixes, R5 re-review.

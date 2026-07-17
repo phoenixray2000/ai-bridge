@@ -189,8 +189,12 @@ source / accepted-or-rejected / reason / dispatch target. Confirmed fixes dispat
 written reason — never accept wholesale.
 
 **Gate wiring must enforce the verdict file** — any NEW
-`check-review-evidence.mjs` wiring for a gate label passes `--verdict` (and
-`--verdict-lines`): the verdict file is the anti-confabulation anchor (below) —
+`check-review-evidence.mjs` wiring for a gate passes `--verdict` (and
+`--verdict-lines`), wired on the gate's **ROOT label** (R1 evidence + the
+single `<label>-verdict.md`; per-round `-rN` evidence anchoring is the
+arbitration contract inside the verdict, not the checker's job — the checker
+asserts existence/shape, arbitration asserts round identity): the verdict file
+is the anti-confabulation anchor (below) —
 a gate whose GREEN lives only in conversation is exactly the 2026-07-10
 fabrication vector, and cross-session handoffs cite it as the sole verifiable
 record. Forward-only: do NOT retrofit pre-existing gate labels or repair old
