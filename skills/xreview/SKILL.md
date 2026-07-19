@@ -238,6 +238,37 @@ on **"build something new"** proposals ("also handle X", "add a Y layer"):
 
 Removing machinery is always fine; the gate is asymmetric by design.
 
+### Proportionality — a gate may not outgrow what it guards
+
+Standing check whenever a round's accepted fixes add strength to a **mechanism**
+(gate, guard, validator, scanner) rather than to the product. Run all three; any
+one tripping is an oscillation exit (below).
+
+- **Magnitude.** Weigh the mechanism's implementation complexity against the
+  change it protects. A gate an order of magnitude heavier than the diff it
+  guards is a design smell, not thoroughness. Grounded: batch-g/W9 spent R2–R4
+  — **11 of 12 accepted MAJORs** — hardening ONE criterion of a gate guarding a
+  13-line barrel deletion; it was headed for a whole-repo TypeChecker analysis
+  on the pre-commit chain before anyone asked the question.
+- **Duplication — ask BEFORE hardening, not after.** Does the repo already
+  enforce this invariant? Search existing gate configs (lint rules, dep-graph
+  rules, type checks, CI globs) for it. A third implementation of one invariant
+  creates rival semantics with no SPOT. W9's criterion was re-deriving what
+  eslint `no-restricted-imports` + a dependency-cruiser relative-path rule
+  already enforced — while blind to the one vector they missed (their globs
+  skipped `.mjs`), which was the only gap worth closing and was not that
+  batch's job.
+- **Cheapest enforcement point.** When a mechanism grows round after round to
+  cover more forms, ask where the invariant is *already* pinned — compiler,
+  module resolution, an existing gate's glob. Usually the honest fix is widening
+  that (filed as its own item), not growing a batch-local gate. If the form set
+  is provably unenumerable, enumeration is the wrong contract shape: pin the
+  finite layer and fail loud on the rest.
+
+When a test trips, put the mechanism's **scope** back on the table — not just
+its implementation — deletion included. Removing machinery never needs the
+additive gate.
+
 ### Loop convergence + round accounting (SPOT for every looping gate)
 
 - **GREEN = latest round's arbitrated findings have no BLOCKER/MAJOR.** Don't
@@ -251,8 +282,13 @@ Removing machinery is always fine; the gate is asymmetric by design.
   each round's accepted fix is another patch on the same lock / state machine /
   path convention (grounded: plan-wechat-storage-unification burned R2–R4
   finding new races in one hand-rolled lock; the converging move was DELETING
-  the mechanism, available two rounds earlier). At arbitration, judge the
-  family; on the second consecutive hit, the verdict records the oscillation
+  the mechanism, available two rounds earlier). **A redesign does not reset the
+  family**: if round N redesigned mechanism M and round N+1 finds the redesign
+  incomplete, that is the SAME family, not a fresh start — otherwise every round
+  relabels itself "new design" and the exit never fires (grounded: batch-g/W9
+  ran form-table → AST → Layer A/B as three successive redesigns of one
+  criterion, each judged new, so the exit never tripped through R4). At
+  arbitration, judge the family; on the second consecutive hit, the verdict records the oscillation
   call + reason, and the exit switches from "dispatch fixes, next round" to a
   redesign of the mechanism — orchestrator decides autonomously (no user
   approval point; the review-fix loop is the wrong tool for a design defect).
